@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Scratch/test scripts
+find_api*.py
+test_*.py
+bot_files.zip
