@@ -126,21 +126,28 @@ async def search(interaction: discord.Interaction, ign: str):
 @bot.tree.command(name="snipe", description="Snipe and track a player's active ranked match status")
 @app_commands.describe(ign="In-Game Name (IGN) to snipe")
 async def snipe(interaction: discord.Interaction, ign: str):
+    await interaction.response.defer()
     user_id = interaction.user.id
     
     player = await cops_api_client.get_player_by_ign(ign)
-    display_name = player["ign"] if player else ign
+    if player:
+        display_name = player["ign"]
+        status_str = player.get("status", "Online").capitalize()
+    else:
+        display_name = ign
+        status_str = "Offline"
 
     snipe_tracker.add_target(user_id, display_name)
 
     embed = discord.Embed(
         title="Player Snipe Activated",
-        description=f"Now actively sniping **{display_name}**!\nYou will receive automated alerts when they enter or finish a ranked game.",
+        description=f"Now actively sniping **{display_name}**! (Status: **{status_str}**)\nYou will receive automated alerts when they enter or finish a ranked game.",
         color=discord.Color.dark_purple()
     )
     embed.set_footer(text="made by pown")
     
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
+
 
 
 @bot.tree.command(name="leaderboard", description="Show official Critical Ops Leaderboard with interactive Arrow buttons")
