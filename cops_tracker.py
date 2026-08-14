@@ -7,40 +7,32 @@ import config
 
 class SnipeTracker:
     """
-    Manages active sniping targets with SQLite/PostgreSQL persistent database storage.
-    Polls every 15 seconds to detect live match starts and finishes.
+    Manages active sniping targets with multi-layer persistent database storage.
+    Guarantees target survival across bot redeployments and restarts.
     """
     def __init__(self):
-        self.targets: Dict[Tuple[int, str], Dict[str, Any]] = db.get_all_snipe_targets()
-        print(f"[SNIPE DB] Loaded {len(self.targets)} active snipe targets from database.")
+        pass
+
+    @property
+    def targets(self) -> Dict[Tuple[int, str], Dict[str, Any]]:
+        # Always fetch fresh targets from persistent database
+        return db.get_all_snipe_targets()
 
     def add_target(self, user_id: int, ign: str) -> bool:
-        added = db.add_snipe_target(user_id, ign)
-        if added:
-            key = (user_id, ign.lower())
-            self.targets[key] = {
-                "user_id": user_id,
-                "ign_display": ign,
-                "state": "idle",
-                "kills": 0,
-                "deaths": 0,
-                "last_rating": None
-            }
-        return added
+        return db.add_snipe_target(user_id, ign)
 
     def remove_target(self, user_id: int, ign: str) -> bool:
-        removed = db.remove_snipe_target(user_id, ign)
-        key = (user_id, ign.lower())
-        if key in self.targets:
-            del self.targets[key]
-        return removed
+        return db.remove_snipe_target(user_id, ign)
 
     def is_sniping(self, user_id: int, ign: str) -> bool:
-        return (user_id, ign.lower()) in self.targets
+        targets = self.targets
+        return (user_id, ign.lower()) in targets
 
     async def check_snipes(self, bot: discord.Client) -> List[Dict[str, Any]]:
         alerts = []
-        for (user_id, key_ign), info in list(self.targets.items()):
+        all_targets = self.targets
+
+        for (user_id, key_ign), info in list(all_targets.items()):
             player = await cops_api_client.get_player_by_ign(info["ign_display"])
             if not player:
                 continue
@@ -50,14 +42,12 @@ class SnipeTracker:
             last_rating = info["last_rating"]
 
             if last_rating is None:
-                info["last_rating"] = current_rating
                 db.update_snipe_state(user_id, ign_name, info["state"], current_rating)
                 continue
 
             # Detect real ranked match completion via real MMR change
             if current_rating != last_rating:
                 delta = current_rating - last_rating
-                info["last_rating"] = current_rating
                 db.update_snipe_state(user_id, ign_name, info["state"], current_rating)
                 
                 match_kills = max(5, abs(delta) * 2)
@@ -76,7 +66,7 @@ class SnipeTracker:
 class LeaderboardTracker:
     """
     Monitors Spec Ops (1800+ rating) and Elite Ops players from live C-Ops database.
-    Polls every 15 seconds to detect live rating & rank changes.
+    Persists snapshot to database.
     """
     def __init__(self):
         self.previous_snapshot: Dict[str, Dict[str, Any]] = db.get_leaderboard_snapshot()
@@ -116,7 +106,6 @@ class LeaderboardTracker:
                 prev_rank = prev["rank"]
                 prev_pos = prev.get("pos")
 
-                # Detect rating change or rank position movement
                 if current_rating != prev_rating or (current_pos and prev_pos and current_pos != prev_pos) or current_rank != prev_rank:
                     diff = current_rating - prev_rating
                     diff_str = f"+{diff}" if diff >= 0 else f"{diff}"
