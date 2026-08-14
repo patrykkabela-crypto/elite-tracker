@@ -95,14 +95,14 @@ class CriticalOpsAPI:
 
     async def get_spec_ops_leaderboard(self) -> List[Dict[str, Any]]:
         """
-        Fetch full live Spec Ops & Elite Ops players down to 1800+ rating from Critical Ops database.
-        Combines Elite Ops and Ranked leaderboards.
+        Fetch ALL Spec Ops (1800+ rating) AND Elite Ops players for live tracking.
+        Combines top Elite Ops and ranked Spec Ops entries.
         """
         session = await self.get_session()
         leaderboard_players = []
         seen_names = set()
         
-        # 1. Fetch Elite Ops Top Leaderboard
+        # 1. Fetch Top Elite Ops players (#1, #2, etc.)
         try:
             async with session.get(f"{self.base_url}/leaderboard/elite") as resp:
                 if resp.status == 200:
@@ -122,7 +122,7 @@ class CriticalOpsAPI:
         except Exception as e:
             print(f"[COPS API ERROR] Elite leaderboard query failed: {e}")
 
-        # 2. Fetch Extended Spec Ops Leaderboard (Up to 1000 players down to 1800 MMR)
+        # 2. Fetch Ranked Spec Ops players (Down to 1800 MMR)
         try:
             async with session.get(f"{self.base_url}/leaderboard/ranked") as resp:
                 if resp.status == 200:
@@ -137,12 +137,12 @@ class CriticalOpsAPI:
                                 leaderboard_players.append({
                                     "ign": name,
                                     "rank": "Spec Ops" if rating < 2000 else "Elite Ops",
-                                    "rank_position": idx,
+                                    "rank_position": None if rating < 2000 else idx,
                                     "rating": rating,
                                     "movement": 0
                                 })
         except Exception as e:
-            print(f"[COPS API ERROR] Extended ranked leaderboard query failed: {e}")
+            print(f"[COPS API ERROR] Ranked Spec Ops query failed: {e}")
 
         return leaderboard_players
 

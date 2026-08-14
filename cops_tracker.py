@@ -7,7 +7,6 @@ import config
 class SnipeTracker:
     """
     Manages active sniping targets and match state notifications.
-    Checks real Critical Ops player statistics cleanly.
     """
     def __init__(self):
         self.targets: Dict[str, Dict[str, Any]] = {}
@@ -44,12 +43,10 @@ class SnipeTracker:
                 info["last_rating"] = current_rating
                 continue
 
-            # Detect real ranked match completion via real MMR change
             if current_rating != last_rating:
                 delta = current_rating - last_rating
                 info["last_rating"] = current_rating
                 
-                # Estimate match performance from real database stats
                 match_kills = max(5, abs(delta) * 2)
                 match_deaths = max(2, match_kills - delta) if delta > 0 else match_kills + abs(delta)
 
@@ -65,8 +62,11 @@ class SnipeTracker:
 
 class LeaderboardTracker:
     """
-    Monitors Spec Ops+ players from the live Critical Ops database.
-    Prevents duplicate alert posts and tracks genuine rank/rating shifts.
+    Monitors BOTH Spec Ops (1800+ rating) and Elite Ops players from live C-Ops database.
+    Formats:
+      Elite Ops: x: #15 → #13, 1990 → 1996 (+6) (x-x)
+      Spec Ops:  x: 1812 → 1820 (+8) (x-x)
+      Master to Spec Ops promotion: x: 1792 → 1804 (+12) (x-x) (new)
     """
     def __init__(self):
         self.previous_snapshot: Dict[str, Dict[str, Any]] = {}
@@ -81,7 +81,7 @@ class LeaderboardTracker:
 
         seen_keys: Set[str] = set()
 
-        # First run: initialize baseline snapshot starting from NOW (no spam on startup)
+        # First run: initialize baseline snapshot for ALL Spec Ops + Elite Ops players
         if not self.initialized:
             for player in current_players:
                 key = player["ign"].lower()
@@ -91,10 +91,10 @@ class LeaderboardTracker:
                     "pos": player.get("rank_position")
                 }
             self.initialized = True
-            print(f"[TRACKER] Baseline snapshot initialized for {len(current_players)} Spec Ops+ players.")
+            print(f"[TRACKER] Baseline snapshot initialized for {len(current_players)} Spec Ops+ & Elite Ops players.")
             return []
 
-        # Subsequent runs: detect genuine rating and position changes in C-Ops database
+        # Subsequent runs: detect genuine rating or rank changes across ALL Spec Ops & Elite Ops players
         for player in current_players:
             ign = player["ign"]
             key = ign.lower()
@@ -113,8 +113,8 @@ class LeaderboardTracker:
                 prev_rank = prev["rank"]
                 prev_pos = prev.get("pos")
 
-                # Trigger update only if REAL rating or rank position changed
-                if current_rating != prev_rating or (current_pos and prev_pos and current_pos != prev_pos):
+                # Check if rating, rank position, or rank promotion changed
+                if current_rating != prev_rating or (current_pos and prev_pos and current_pos != prev_pos) or current_rank != prev_rank:
                     diff = current_rating - prev_rating
                     diff_str = f"+{diff}" if diff >= 0 else f"{diff}"
                     
@@ -122,13 +122,16 @@ class LeaderboardTracker:
                     deaths_match = max(3, kills_match - diff) if diff > 0 else kills_match + abs(diff)
                     score_str = f"({kills_match}-{deaths_match})"
 
-                    is_new = (prev_rank == "Master" and current_rank == "Spec Ops")
+                    # Check for Master -> Spec Ops promotion
+                    is_new = (prev_rating < 1800 and current_rating >= 1800) or (prev_rank == "Master" and current_rank == "Spec Ops")
                     new_tag = " (new)" if is_new else ""
 
                     if current_rank == "Elite Ops" and prev_pos and current_pos:
+                        # Elite Ops Format: x: #15 → #13, 1990 → 1996 (+6) (x-x)
                         line = f"{ign}: #{prev_pos} → #{current_pos}, {prev_rating} → {current_rating} ({diff_str}) {score_str}{new_tag}"
                         updates.append(line)
                     else:
+                        # Spec Ops Format (1800+ MMR): x: 1812 → 1820 (+8) (x-x)
                         line = f"{ign}: {prev_rating} → {current_rating} ({diff_str}) {score_str}{new_tag}"
                         updates.append(line)
 
