@@ -37,7 +37,7 @@ async def on_ready():
 async def search(interaction: discord.Interaction, ign: str):
     """
     /search ign
-    Clean Blue Embed with real profile stats from Critical Ops database. No emojis.
+    Clean Blue Embed with profile stats, K/D, ratings, level, account age.
     Footer: made by powm
     """
     await interaction.response.defer()
@@ -47,7 +47,7 @@ async def search(interaction: discord.Interaction, ign: str):
         await interaction.followup.send(f"Player **{ign}** was not found in Critical Ops database.", ephemeral=True)
         return
 
-    # Clean Blue Embed without emojis
+    # Clean Blue Embed with perfect spacing
     embed = discord.Embed(
         title=f"Critical Ops Player Profile: {player['ign']}",
         color=discord.Color.blue()
@@ -55,10 +55,10 @@ async def search(interaction: discord.Interaction, ign: str):
     
     embed.add_field(name="IGN", value=f"`{player['ign']}`", inline=True)
     embed.add_field(name="Account ID", value=f"`{player['id']}`", inline=True)
-    embed.add_field(name="Rank & Rating", value=f"**{player['rank']}** ({player['rating']})", inline=True)
+    embed.add_field(name="Rank & Rating", value=f"**{player['rank']}** ({player['rating']:,} Rating)", inline=True)
     
     embed.add_field(name="Kills / Deaths", value=f"{player['kills']:,} / {player['deaths']:,} (K/D: **{player['kd_ratio']}**)", inline=False)
-    embed.add_field(name="Peak / Lowest Rating", value=f"Peak: **{player['peak_rating']}** | Lowest: **{player['lowest_rating']}**", inline=False)
+    embed.add_field(name="Peak / Lowest Rating", value=f"Peak: **{player['peak_rating']:,}** | Lowest: **{player['lowest_rating']:,}**", inline=False)
     embed.add_field(name="Account Age", value=f"{player['account_age_str']}", inline=True)
     embed.add_field(name="Level", value=f"Level **{player['level']}**", inline=True)
     
@@ -72,12 +72,11 @@ async def search(interaction: discord.Interaction, ign: str):
 async def snipe(interaction: discord.Interaction, ign: str):
     """
     /snipe ign
-    Tracks player and notifies when they are in game ranked with score (x/y). No emojis.
+    Tracks player and notifies when they are in game ranked with score (x/y).
     Footer signature: made by pown
     """
     user_id = interaction.user.id
     
-    # Verify player exists first in database
     player = await cops_api_client.get_player_by_ign(ign)
     display_name = player["ign"] if player else ign
 
@@ -122,7 +121,7 @@ async def leaderboard(interaction: discord.Interaction, page: int = 1):
     for p in page_entries:
         pos = p.get("rank_position")
         pos_str = f"#{pos}" if pos else "#"
-        description_lines.append(f"**{pos_str}** {p['ign']} — **{p['rank']}** ({p['rating']} Rating)")
+        description_lines.append(f"**{pos_str}** {p['ign']} — **{p['rank']}** ({p['rating']:,} Rating)")
 
     embed = discord.Embed(
         title="CRITICAL OPS LEADERBOARD",

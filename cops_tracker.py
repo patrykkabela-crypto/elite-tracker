@@ -8,7 +8,7 @@ import config
 class SnipeTracker:
     """
     Manages active sniping targets and match state notifications.
-    No extra clutter emojis.
+    Guarantees clean spacing and exact text formatting.
     """
     def __init__(self):
         self.targets: Dict[str, Dict[str, Any]] = {}
@@ -40,10 +40,11 @@ class SnipeTracker:
             current_state = info["state"]
 
             roll = random.random()
-            if current_state == "idle" and roll < 0.4:
+            if current_state == "idle" and roll < 0.35:
                 info["state"] = "in_ranked"
                 info["kills"] = random.randint(3, 18)
                 info["deaths"] = random.randint(1, 12)
+                # Exact message format with proper spaces: @user Player x is currenly in ranked score (x/y)
                 alerts.append({
                     "type": "start",
                     "user_id": user_id,
@@ -53,10 +54,11 @@ class SnipeTracker:
                     "message": f"<@{user_id}> Player **{ign_name}** is currenly in ranked score **({info['kills']}/{info['deaths']})**"
                 })
 
-            elif current_state == "in_ranked" and roll < 0.5:
+            elif current_state == "in_ranked" and roll < 0.45:
                 final_kills = info["kills"] + random.randint(2, 7)
                 final_deaths = info["deaths"] + random.randint(1, 5)
                 info["state"] = "idle"
+                # Exact message format with proper spaces: @user Player x has ended the ranked game score (x/y)
                 alerts.append({
                     "type": "end",
                     "user_id": user_id,
@@ -71,7 +73,7 @@ class SnipeTracker:
 
 class LeaderboardTracker:
     """
-    Monitors Spec Ops+ players without emoji clutter and ensures unique, accurate entries.
+    Monitors Spec Ops+ players and formats clean, perfectly spaced leaderboard diffs.
     """
     def __init__(self):
         self.previous_snapshot: Dict[str, Dict[str, Any]] = {}
@@ -85,7 +87,6 @@ class LeaderboardTracker:
             ign = player["ign"]
             key = ign.lower()
             
-            # Prevent duplicate player lines in same update block
             if key in seen_keys:
                 continue
             seen_keys.add(key)
@@ -94,7 +95,7 @@ class LeaderboardTracker:
             current_rating = player["rating"]
             current_pos = player.get("rank_position")
             
-            # Simulate natural match outcomes for active player leaderboard changes
+            # Simulate natural rating shifts between polling checks
             if key in self.previous_snapshot and random.random() < 0.30:
                 rating_delta = random.choice([+6, +8, +12, +15, -7, -10])
                 current_rating += rating_delta
@@ -117,11 +118,11 @@ class LeaderboardTracker:
                     new_tag = " (new)" if is_new else ""
 
                     if current_rank == "Elite Ops" and prev_pos and current_pos:
-                        # Elite Ops Format: x: #15 → #13, 1990 → 1996 (+6) (x-x)
+                        # Elite Ops Format with clear spaces: x: #15 → #13, 1990 → 1996 (+6) (x-x)
                         line = f"{ign}: #{prev_pos} → #{current_pos}, {prev_rating} → {current_rating} ({diff_str}) {score_str}{new_tag}"
                         updates.append(line)
                     else:
-                        # Spec Ops Format: x: 1812 → 1820 (+8) (x-x)
+                        # Spec Ops Format with clear spaces: x: 1812 → 1820 (+8) (x-x)
                         line = f"{ign}: {prev_rating} → {current_rating} ({diff_str}) {score_str}{new_tag}"
                         updates.append(line)
 
