@@ -11,9 +11,10 @@ DISCORD_APP_ID = os.getenv("DISCORD_APP_ID", "1537842692761985184")
 # Target channel for automatic Spec Ops+ leaderboard tracking
 LEADERBOARD_CHANNEL_ID = int(os.getenv("LEADERBOARD_CHANNEL_ID", "1537846978300354822"))
 
-# Polling intervals in seconds (Poll real C-Ops database every 120 sec)
-SNIPE_CHECK_INTERVAL = int(os.getenv("SNIPE_CHECK_INTERVAL", "60"))
-LEADERBOARD_CHECK_INTERVAL = int(os.getenv("LEADERBOARD_CHECK_INTERVAL", "120"))
+# Fast 15-second polling intervals for live match & leaderboard updates
+SNIPE_CHECK_INTERVAL = int(os.getenv("SNIPE_CHECK_INTERVAL", "15"))
+LEADERBOARD_CHECK_INTERVAL = int(os.getenv("LEADERBOARD_CHECK_INTERVAL", "15"))
+
 
 
 

@@ -7,11 +7,10 @@ import config
 
 class SnipeTracker:
     """
-    Manages active sniping targets with SQLite persistent database storage
-    so targets persist across bot redeployments and restarts.
+    Manages active sniping targets with SQLite/PostgreSQL persistent database storage.
+    Polls every 15 seconds to detect live match starts and finishes.
     """
     def __init__(self):
-        # Load persistent targets from database on startup
         self.targets: Dict[Tuple[int, str], Dict[str, Any]] = db.get_all_snipe_targets()
         print(f"[SNIPE DB] Loaded {len(self.targets)} active snipe targets from database.")
 
@@ -55,6 +54,7 @@ class SnipeTracker:
                 db.update_snipe_state(user_id, ign_name, info["state"], current_rating)
                 continue
 
+            # Detect real ranked match completion via real MMR change
             if current_rating != last_rating:
                 delta = current_rating - last_rating
                 info["last_rating"] = current_rating
@@ -75,7 +75,8 @@ class SnipeTracker:
 
 class LeaderboardTracker:
     """
-    Monitors Spec Ops+ and Elite Ops players with SQLite persistent snapshot storage.
+    Monitors Spec Ops (1800+ rating) and Elite Ops players from live C-Ops database.
+    Polls every 15 seconds to detect live rating & rank changes.
     """
     def __init__(self):
         self.previous_snapshot: Dict[str, Dict[str, Any]] = db.get_leaderboard_snapshot()
@@ -115,6 +116,7 @@ class LeaderboardTracker:
                 prev_rank = prev["rank"]
                 prev_pos = prev.get("pos")
 
+                # Detect rating change or rank position movement
                 if current_rating != prev_rating or (current_pos and prev_pos and current_pos != prev_pos) or current_rank != prev_rank:
                     diff = current_rating - prev_rating
                     diff_str = f"+{diff}" if diff >= 0 else f"{diff}"
@@ -139,7 +141,6 @@ class LeaderboardTracker:
                 "pos": current_pos
             }
 
-        # Save snapshot updates to database
         db.save_leaderboard_snapshot(current_players)
 
         current_hash = hash("\n".join(updates))
