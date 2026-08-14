@@ -1,44 +1,40 @@
 import discord
 import asyncio
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Tuple
 from cops_api import cops_api_client
+from database import db
 import config
 
 class SnipeTracker:
     """
-    Manages active sniping targets and match state notifications per user.
+    Manages active sniping targets with SQLite persistent database storage
+    so targets persist across bot redeployments and restarts.
     """
     def __init__(self):
-        # Format: { (user_id, ign_lowercase): { "user_id": int, "ign_display": str, "state": str, "last_rating": int } }
-        self.targets: Dict[tuple, Dict[str, Any]] = {}
+        # Load persistent targets from database on startup
+        self.targets: Dict[Tuple[int, str], Dict[str, Any]] = db.get_all_snipe_targets()
+        print(f"[SNIPE DB] Loaded {len(self.targets)} active snipe targets from database.")
 
     def add_target(self, user_id: int, ign: str) -> bool:
-        """
-        Adds target for user. Returns False if user is already sniping this player.
-        """
-        key = (user_id, ign.lower())
-        if key in self.targets:
-            return False  # Already sniped by this user
-
-        self.targets[key] = {
-            "user_id": user_id,
-            "ign_display": ign,
-            "state": "idle",
-            "kills": 0,
-            "deaths": 0,
-            "last_rating": None
-        }
-        return True
+        added = db.add_snipe_target(user_id, ign)
+        if added:
+            key = (user_id, ign.lower())
+            self.targets[key] = {
+                "user_id": user_id,
+                "ign_display": ign,
+                "state": "idle",
+                "kills": 0,
+                "deaths": 0,
+                "last_rating": None
+            }
+        return added
 
     def remove_target(self, user_id: int, ign: str) -> bool:
-        """
-        Removes target for user. Returns False if target was not being sniped.
-        """
+        removed = db.remove_snipe_target(user_id, ign)
         key = (user_id, ign.lower())
         if key in self.targets:
             del self.targets[key]
-            return True
-        return False
+        return removed
 
     def is_sniping(self, user_id: int, ign: str) -> bool:
         return (user_id, ign.lower()) in self.targets
@@ -56,11 +52,13 @@ class SnipeTracker:
 
             if last_rating is None:
                 info["last_rating"] = current_rating
+                db.update_snipe_state(user_id, ign_name, info["state"], current_rating)
                 continue
 
             if current_rating != last_rating:
                 delta = current_rating - last_rating
                 info["last_rating"] = current_rating
+                db.update_snipe_state(user_id, ign_name, info["state"], current_rating)
                 
                 match_kills = max(5, abs(delta) * 2)
                 match_deaths = max(2, match_kills - delta) if delta > 0 else match_kills + abs(delta)
@@ -77,11 +75,11 @@ class SnipeTracker:
 
 class LeaderboardTracker:
     """
-    Monitors BOTH Spec Ops (1800+ rating) and Elite Ops players from live C-Ops database.
+    Monitors Spec Ops+ and Elite Ops players with SQLite persistent snapshot storage.
     """
     def __init__(self):
-        self.previous_snapshot: Dict[str, Dict[str, Any]] = {}
-        self.initialized = False
+        self.previous_snapshot: Dict[str, Dict[str, Any]] = db.get_leaderboard_snapshot()
+        self.initialized = bool(self.previous_snapshot)
         self.last_sent_hash = ""
 
     async def check_updates(self) -> List[str]:
@@ -93,15 +91,10 @@ class LeaderboardTracker:
         seen_keys: Set[str] = set()
 
         if not self.initialized:
-            for player in current_players:
-                key = player["ign"].lower()
-                self.previous_snapshot[key] = {
-                    "rank": player["rank"],
-                    "rating": player["rating"],
-                    "pos": player.get("rank_position")
-                }
+            db.save_leaderboard_snapshot(current_players)
+            self.previous_snapshot = db.get_leaderboard_snapshot()
             self.initialized = True
-            print(f"[TRACKER] Baseline snapshot initialized for {len(current_players)} Spec Ops+ & Elite Ops players.")
+            print(f"[TRACKER DB] Baseline snapshot initialized for {len(current_players)} Spec Ops+ players.")
             return []
 
         for player in current_players:
@@ -145,6 +138,9 @@ class LeaderboardTracker:
                 "rating": current_rating,
                 "pos": current_pos
             }
+
+        # Save snapshot updates to database
+        db.save_leaderboard_snapshot(current_players)
 
         current_hash = hash("\n".join(updates))
         if current_hash == self.last_sent_hash:
