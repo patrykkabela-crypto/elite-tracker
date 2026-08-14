@@ -167,8 +167,18 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
     user_id = interaction.user.id
 
     player = await cops_api_client.get_player_by_ign(ign)
-    display_name = player["ign"] if player else ign
-    status_str   = player.get("status", "Online").capitalize() if player else "Offline"
+    if player:
+        display_name = player["ign"]
+        rank_str     = player.get("rank", "Unknown")
+        rating_str   = f"{player.get('rating', 0):,}"
+        clan_tag     = player.get("clan_tag", "")
+        profile_line = f"**{rank_str}** — {rating_str} MMR"
+        if clan_tag:
+            profile_line += f" | Clan: **[{clan_tag}]**"
+    else:
+        display_name = ign
+        profile_line = "Player not found in database — will still track MMR changes."
+
 
     added = snipe_tracker.add_target(user_id, display_name)
     if not added:
@@ -181,13 +191,16 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
     embed = discord.Embed(
         title="Player Snipe Activated",
         description=(
-            f"Now actively sniping **{display_name}**! (Status: **{status_str}**)\n"
-            f"You will receive automated alerts when they enter or finish a ranked game."
+            f"Now actively sniping **{display_name}**\n"
+            f"{profile_line}\n\n"
+            f"You will receive automated alerts when their MMR changes (ranked game finished).\n"
+            f"*Note: C-Ops API does not expose real-time online/in-game status.*"
         ),
         color=discord.Color.dark_purple()
     )
     embed.set_footer(text="made by pown")
     await interaction.followup.send(embed=embed)
+
 
 
 @bot.tree.command(name="unsnipe", description="Stop sniping a player")

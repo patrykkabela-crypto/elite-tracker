@@ -75,6 +75,9 @@ class CriticalOpsAPI:
                 creation_year    = max(2017, 2026 - (17 - earliest))
                 account_age_years = 2026 - creation_year
 
+                clan_info = summary.get("clan", {}) or {}
+                clan_tag  = clan_info.get("tag", "") if isinstance(clan_info, dict) else ""
+
                 return {
                     "ign":               name,
                     "id":                f"COP-{user_id}",
@@ -88,6 +91,7 @@ class CriticalOpsAPI:
                     "kills":             kills,
                     "deaths":            deaths,
                     "kd_ratio":          kd,
+                    "clan_tag":          clan_tag,
                 }
         except Exception as e:
             print(f"[COPS API ERROR] /player/{ign_clean} failed: {e}")
