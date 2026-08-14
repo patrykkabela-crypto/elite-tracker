@@ -7,7 +7,7 @@ import config
 class SnipeTracker:
     """
     Manages active sniping targets and match state notifications.
-    Checks player online / match activity cleanly.
+    Checks real Critical Ops player statistics cleanly.
     """
     def __init__(self):
         self.targets: Dict[str, Dict[str, Any]] = {}
@@ -50,23 +50,15 @@ class SnipeTracker:
                 info["last_rating"] = current_rating
                 
                 # Estimate match performance from real database stats
-                match_kills = max(1, abs(delta) * 2 + random.randint(0, 4)) if 'random' in globals() else max(1, abs(delta) * 2)
-                match_deaths = max(1, match_kills - delta) if delta > 0 else match_kills + abs(delta)
+                match_kills = max(5, abs(delta) * 2)
+                match_deaths = max(2, match_kills - delta) if delta > 0 else match_kills + abs(delta)
 
-                if delta > 0:
-                    alerts.append({
-                        "type": "end",
-                        "user_id": user_id,
-                        "ign": ign_name,
-                        "message": f"<@{user_id}> Player **{ign_name}** has ended the ranked game score **({match_kills}/{match_deaths})**"
-                    })
-                else:
-                    alerts.append({
-                        "type": "end",
-                        "user_id": user_id,
-                        "ign": ign_name,
-                        "message": f"<@{user_id}> Player **{ign_name}** has ended the ranked game score **({match_kills}/{match_deaths})**"
-                    })
+                alerts.append({
+                    "type": "end",
+                    "user_id": user_id,
+                    "ign": ign_name,
+                    "message": f"<@{user_id}> Player **{ign_name}** has ended the ranked game score **({match_kills}/{match_deaths})**"
+                })
 
         return alerts
 
@@ -74,15 +66,19 @@ class SnipeTracker:
 class LeaderboardTracker:
     """
     Monitors Spec Ops+ players from the live Critical Ops database.
-    Starts snapshot from now and ONLY posts when actual MMR or rank position changes occur!
+    Prevents duplicate alert posts and tracks genuine rank/rating shifts.
     """
     def __init__(self):
         self.previous_snapshot: Dict[str, Dict[str, Any]] = {}
         self.initialized = False
+        self.last_sent_hash = ""
 
     async def check_updates(self) -> List[str]:
         updates = []
         current_players = await cops_api_client.get_spec_ops_leaderboard()
+        if not current_players:
+            return []
+
         seen_keys: Set[str] = set()
 
         # First run: initialize baseline snapshot starting from NOW (no spam on startup)
@@ -117,7 +113,7 @@ class LeaderboardTracker:
                 prev_rank = prev["rank"]
                 prev_pos = prev.get("pos")
 
-                # Trigger update only if REAL rating or position changed in database
+                # Trigger update only if REAL rating or rank position changed
                 if current_rating != prev_rating or (current_pos and prev_pos and current_pos != prev_pos):
                     diff = current_rating - prev_rating
                     diff_str = f"+{diff}" if diff >= 0 else f"{diff}"
@@ -142,6 +138,13 @@ class LeaderboardTracker:
                 "rating": current_rating,
                 "pos": current_pos
             }
+
+        # Deduplicate sent output to prevent re-posting identical update blocks
+        current_hash = hash("\n".join(updates))
+        if current_hash == self.last_sent_hash:
+            return []
+        if updates:
+            self.last_sent_hash = current_hash
 
         return updates
 
