@@ -2,25 +2,37 @@ import os
 import sqlite3
 from typing import Dict, Any, List, Tuple, Optional
 
-# Check if Railway PostgreSQL DATABASE_URL is available
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+# Check if Railway PostgreSQL DATABASE_URL is valid
+raw_db_url = os.getenv("DATABASE_URL", "").strip()
 
-if DATABASE_URL:
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-    USE_PG = True
-    print("[DB] Configured for Railway PostgreSQL Database.")
+# Validate that DATABASE_URL is a real postgres URL and not an unexpanded template string
+if raw_db_url and ("postgres://" in raw_db_url or "postgresql://" in raw_db_url) and not raw_db_url.startswith("${"):
+    if raw_db_url.startswith("postgres://"):
+        raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+    
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        # Test connection
+        test_conn = psycopg2.connect(raw_db_url)
+        test_conn.close()
+        DATABASE_URL = raw_db_url
+        USE_PG = True
+        print("[DB] Successfully connected to Railway PostgreSQL Database.")
+    except Exception as e:
+        print(f"[DB WARNING] Could not connect to PostgreSQL ({e}). Falling back to SQLite.")
+        DATABASE_URL = ""
+        USE_PG = False
 else:
+    DATABASE_URL = ""
     USE_PG = False
     print("[DB] Configured for Local SQLite Database (bot_data.db).")
 
 
 class DatabaseManager:
     """
-    Unified Database Manager supporting Railway PostgreSQL (via DATABASE_URL)
-    and local SQLite fallback for 100% persistent storage across redeployments.
+    Unified Database Manager with fail-safe fallback:
+    Tries PostgreSQL first, and gracefully falls back to local SQLite.
     """
     def __init__(self, sqlite_path: str = "bot_data.db"):
         self.sqlite_path = sqlite_path
@@ -29,67 +41,74 @@ class DatabaseManager:
         self._init_db()
 
     def _get_connection(self):
-        if self.use_pg:
-            return psycopg2.connect(self.pg_url, cursor_factory=RealDictCursor)
-        else:
-            conn = sqlite3.connect(self.sqlite_path)
-            conn.row_factory = sqlite3.Row
-            return conn
+        if self.use_pg and self.pg_url:
+            try:
+                import psycopg2
+                from psycopg2.extras import RealDictCursor
+                return psycopg2.connect(self.pg_url, cursor_factory=RealDictCursor)
+            except Exception as e:
+                print(f"[DB ERROR] PostgreSQL connection failed: {e}. Using SQLite fallback.")
+                self.use_pg = False
+
+        conn = sqlite3.connect(self.sqlite_path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def _init_db(self):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            if self.use_pg:
-                # PostgreSQL Table Schema
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS snipe_targets (
-                        user_id BIGINT NOT NULL,
-                        ign_lowercase VARCHAR(100) NOT NULL,
-                        ign_display VARCHAR(100) NOT NULL,
-                        state VARCHAR(50) DEFAULT 'idle',
-                        kills INT DEFAULT 0,
-                        deaths INT DEFAULT 0,
-                        last_rating INT DEFAULT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (user_id, ign_lowercase)
-                    );
-                """)
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS leaderboard_snapshot (
-                        ign_lowercase VARCHAR(100) PRIMARY KEY,
-                        ign_display VARCHAR(100) NOT NULL,
-                        rank_name VARCHAR(50) NOT NULL,
-                        rating INT NOT NULL,
-                        rank_position INT DEFAULT NULL,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-            else:
-                # SQLite Table Schema
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS snipe_targets (
-                        user_id INTEGER NOT NULL,
-                        ign_lowercase TEXT NOT NULL,
-                        ign_display TEXT NOT NULL,
-                        state TEXT DEFAULT 'idle',
-                        kills INTEGER DEFAULT 0,
-                        deaths INTEGER DEFAULT 0,
-                        last_rating INTEGER DEFAULT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (user_id, ign_lowercase)
-                    );
-                """)
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS leaderboard_snapshot (
-                        ign_lowercase TEXT PRIMARY KEY,
-                        ign_display TEXT NOT NULL,
-                        rank_name TEXT NOT NULL,
-                        rating INTEGER NOT NULL,
-                        rank_position INTEGER DEFAULT NULL,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-            conn.commit()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                if self.use_pg:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS snipe_targets (
+                            user_id BIGINT NOT NULL,
+                            ign_lowercase VARCHAR(100) NOT NULL,
+                            ign_display VARCHAR(100) NOT NULL,
+                            state VARCHAR(50) DEFAULT 'idle',
+                            kills INT DEFAULT 0,
+                            deaths INT DEFAULT 0,
+                            last_rating INT DEFAULT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            PRIMARY KEY (user_id, ign_lowercase)
+                        );
+                    """)
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS leaderboard_snapshot (
+                            ign_lowercase VARCHAR(100) PRIMARY KEY,
+                            ign_display VARCHAR(100) NOT NULL,
+                            rank_name VARCHAR(50) NOT NULL,
+                            rating INT NOT NULL,
+                            rank_position INT DEFAULT NULL,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                else:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS snipe_targets (
+                            user_id INTEGER NOT NULL,
+                            ign_lowercase TEXT NOT NULL,
+                            ign_display TEXT NOT NULL,
+                            state TEXT DEFAULT 'idle',
+                            kills INTEGER DEFAULT 0,
+                            deaths INTEGER DEFAULT 0,
+                            last_rating INTEGER DEFAULT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            PRIMARY KEY (user_id, ign_lowercase)
+                        );
+                    """)
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS leaderboard_snapshot (
+                            ign_lowercase TEXT PRIMARY KEY,
+                            ign_display TEXT NOT NULL,
+                            rank_name TEXT NOT NULL,
+                            rating INTEGER NOT NULL,
+                            rank_position INTEGER DEFAULT NULL,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                conn.commit()
+        except Exception as e:
+            print(f"[DB ERROR] Database initialization failed: {e}")
 
     # ==================== SNIPE TARGETS ====================
 
@@ -99,6 +118,7 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 if self.use_pg:
+                    import psycopg2
                     cursor.execute("""
                         INSERT INTO snipe_targets (user_id, ign_lowercase, ign_display)
                         VALUES (%s, %s, %s)
