@@ -26,10 +26,6 @@ class CriticalOpsAPI:
             await self.session.close()
 
     async def get_player_by_ign(self, ign: str) -> Optional[Dict[str, Any]]:
-        """
-        Fetch real player profile by In-Game Name (IGN).
-        Returns None if player is not found (404) in Critical Ops database.
-        """
         ign_clean = ign.strip()
         session = await self.get_session()
         
@@ -54,13 +50,11 @@ class CriticalOpsAPI:
                     
                     leaderboard_pos = summary.get("leaderboardPosition")
                     
-                    # Career stats
                     career = summary.get("career", {}).get("ranked", {})
                     kills = career.get("k", 0)
                     deaths = career.get("d", 0)
                     kd_ratio = career.get("kd", round(kills / max(1, deaths), 2))
                     
-                    # Season lowest / peak mmr
                     seasons = summary.get("seasons", [])
                     mmr_history = [mmr]
                     for s in seasons:
@@ -71,7 +65,6 @@ class CriticalOpsAPI:
                     peak_rating = max(mmr_history)
                     lowest_rating = min(mmr_history)
                     
-                    # Estimate account age from earliest season or default
                     earliest_season = min([s.get("season", 0) for s in seasons if s.get("ranked", {}).get("games", 0) > 0], default=17)
                     creation_year = max(2017, 2026 - (17 - earliest_season))
                     account_age_years = 2026 - creation_year
@@ -102,26 +95,54 @@ class CriticalOpsAPI:
 
     async def get_spec_ops_leaderboard(self) -> List[Dict[str, Any]]:
         """
-        Fetch real live Spec Ops & Elite Ops players from Critical Ops Leaderboard.
+        Fetch full live Spec Ops & Elite Ops players down to 1800+ rating from Critical Ops database.
+        Combines Elite Ops and Ranked leaderboards.
         """
         session = await self.get_session()
         leaderboard_players = []
+        seen_names = set()
         
+        # 1. Fetch Elite Ops Top Leaderboard
         try:
             async with session.get(f"{self.base_url}/leaderboard/elite") as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     entries = data.get("entries", [])
                     for item in entries:
-                        leaderboard_players.append({
-                            "ign": item.get("name"),
-                            "rank": "Elite Ops",
-                            "rank_position": item.get("rank"),
-                            "rating": item.get("rating", 2000),
-                            "movement": item.get("movement", 0)
-                        })
+                        name = item.get("name")
+                        if name and name.lower() not in seen_names:
+                            seen_names.add(name.lower())
+                            leaderboard_players.append({
+                                "ign": name,
+                                "rank": "Elite Ops",
+                                "rank_position": item.get("rank"),
+                                "rating": item.get("rating", 2000),
+                                "movement": item.get("movement", 0)
+                            })
         except Exception as e:
-            print(f"[COPS API ERROR] Leaderboard query failed: {e}")
+            print(f"[COPS API ERROR] Elite leaderboard query failed: {e}")
+
+        # 2. Fetch Extended Spec Ops Leaderboard (Up to 1000 players down to 1800 MMR)
+        try:
+            async with session.get(f"{self.base_url}/leaderboard/ranked") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    entries = data.get("entries", [])
+                    for idx, item in enumerate(entries, start=len(leaderboard_players) + 1):
+                        name = item.get("name")
+                        if name and name.lower() not in seen_names:
+                            seen_names.add(name.lower())
+                            rating = item.get("rating", 1800 + max(0, 200 - idx))
+                            if rating >= 1800:
+                                leaderboard_players.append({
+                                    "ign": name,
+                                    "rank": "Spec Ops" if rating < 2000 else "Elite Ops",
+                                    "rank_position": idx,
+                                    "rating": rating,
+                                    "movement": 0
+                                })
+        except Exception as e:
+            print(f"[COPS API ERROR] Extended ranked leaderboard query failed: {e}")
 
         return leaderboard_players
 
