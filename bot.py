@@ -7,10 +7,9 @@ import config
 from cops_api import cops_api_client
 from cops_tracker import snipe_tracker, leaderboard_tracker
 
-# Interactive Pagination View with Arrow Buttons
 class LeaderboardPaginationView(discord.ui.View):
     def __init__(self, players: list, per_page: int = 10):
-        super().__init__(timeout=180)  # 3 minute interactive timeout
+        super().__init__(timeout=180)
         self.players = players
         self.per_page = per_page
         self.current_page = 1
@@ -62,7 +61,6 @@ class CriticalOpsBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # Sync slash commands globally
         synced = await self.tree.sync()
         print(f"[BOT] {len(synced)} Slash commands synchronized globally.")
         
@@ -77,7 +75,7 @@ async def on_ready():
     print(f"[BOT LOGGED IN] {bot.user.name} ({bot.user.id})")
     print(f"[TARGET CHANNEL ID] {config.LEADERBOARD_CHANNEL_ID}")
     print(f"==========================================")
-    await bot.change_presence(activity=discord.Game(name="Critical Ops | /search /snipe /leaderboard"))
+    await bot.change_presence(activity=discord.Game(name="Critical Ops | /search /snipe /unsnipe /leaderboard"))
     
     try:
         channel = bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
@@ -137,7 +135,11 @@ async def snipe(interaction: discord.Interaction, ign: str):
         display_name = ign
         status_str = "Offline"
 
-    snipe_tracker.add_target(user_id, display_name)
+    # Check for duplicate snipe
+    added = snipe_tracker.add_target(user_id, display_name)
+    if not added:
+        await interaction.followup.send(f"⚠️ Player **{display_name}** is already being sniped by you!", ephemeral=True)
+        return
 
     embed = discord.Embed(
         title="Player Snipe Activated",
@@ -148,6 +150,29 @@ async def snipe(interaction: discord.Interaction, ign: str):
     
     await interaction.followup.send(embed=embed)
 
+
+@bot.tree.command(name="unsnipe", description="Stop sniping a player")
+@app_commands.describe(ign="In-Game Name (IGN) to stop sniping")
+async def unsnipe(interaction: discord.Interaction, ign: str):
+    await interaction.response.defer()
+    user_id = interaction.user.id
+    
+    player = await cops_api_client.get_player_by_ign(ign)
+    display_name = player["ign"] if player else ign
+
+    removed = snipe_tracker.remove_target(user_id, display_name)
+    if not removed:
+        await interaction.followup.send(f"⚠️ You are not currently sniping player **{display_name}**.", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="Player Snipe Deactivated",
+        description=f"Stopped sniping **{display_name}**.",
+        color=discord.Color.dark_red()
+    )
+    embed.set_footer(text="made by pown")
+    
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="leaderboard", description="Show official Critical Ops Leaderboard with interactive Arrow buttons")

@@ -6,13 +6,20 @@ import config
 
 class SnipeTracker:
     """
-    Manages active sniping targets and match state notifications.
+    Manages active sniping targets and match state notifications per user.
     """
     def __init__(self):
-        self.targets: Dict[str, Dict[str, Any]] = {}
+        # Format: { (user_id, ign_lowercase): { "user_id": int, "ign_display": str, "state": str, "last_rating": int } }
+        self.targets: Dict[tuple, Dict[str, Any]] = {}
 
-    def add_target(self, user_id: int, ign: str):
-        key = ign.lower()
+    def add_target(self, user_id: int, ign: str) -> bool:
+        """
+        Adds target for user. Returns False if user is already sniping this player.
+        """
+        key = (user_id, ign.lower())
+        if key in self.targets:
+            return False  # Already sniped by this user
+
         self.targets[key] = {
             "user_id": user_id,
             "ign_display": ign,
@@ -21,20 +28,28 @@ class SnipeTracker:
             "deaths": 0,
             "last_rating": None
         }
+        return True
 
-    def remove_target(self, ign: str):
-        key = ign.lower()
+    def remove_target(self, user_id: int, ign: str) -> bool:
+        """
+        Removes target for user. Returns False if target was not being sniped.
+        """
+        key = (user_id, ign.lower())
         if key in self.targets:
             del self.targets[key]
+            return True
+        return False
+
+    def is_sniping(self, user_id: int, ign: str) -> bool:
+        return (user_id, ign.lower()) in self.targets
 
     async def check_snipes(self, bot: discord.Client) -> List[Dict[str, Any]]:
         alerts = []
-        for key, info in list(self.targets.items()):
+        for (user_id, key_ign), info in list(self.targets.items()):
             player = await cops_api_client.get_player_by_ign(info["ign_display"])
             if not player:
                 continue
 
-            user_id = info["user_id"]
             ign_name = player["ign"]
             current_rating = player["rating"]
             last_rating = info["last_rating"]
@@ -63,10 +78,6 @@ class SnipeTracker:
 class LeaderboardTracker:
     """
     Monitors BOTH Spec Ops (1800+ rating) and Elite Ops players from live C-Ops database.
-    Formats:
-      Elite Ops: x: #15 → #13, 1990 → 1996 (+6) (x-x)
-      Spec Ops:  x: 1812 → 1820 (+8) (x-x)
-      Master to Spec Ops promotion: x: 1792 → 1804 (+12) (x-x) (new)
     """
     def __init__(self):
         self.previous_snapshot: Dict[str, Dict[str, Any]] = {}
@@ -81,7 +92,6 @@ class LeaderboardTracker:
 
         seen_keys: Set[str] = set()
 
-        # First run: initialize baseline snapshot for ALL Spec Ops + Elite Ops players
         if not self.initialized:
             for player in current_players:
                 key = player["ign"].lower()
@@ -94,7 +104,6 @@ class LeaderboardTracker:
             print(f"[TRACKER] Baseline snapshot initialized for {len(current_players)} Spec Ops+ & Elite Ops players.")
             return []
 
-        # Subsequent runs: detect genuine rating or rank changes across ALL Spec Ops & Elite Ops players
         for player in current_players:
             ign = player["ign"]
             key = ign.lower()
@@ -113,7 +122,6 @@ class LeaderboardTracker:
                 prev_rank = prev["rank"]
                 prev_pos = prev.get("pos")
 
-                # Check if rating, rank position, or rank promotion changed
                 if current_rating != prev_rating or (current_pos and prev_pos and current_pos != prev_pos) or current_rank != prev_rank:
                     diff = current_rating - prev_rating
                     diff_str = f"+{diff}" if diff >= 0 else f"{diff}"
@@ -122,27 +130,22 @@ class LeaderboardTracker:
                     deaths_match = max(3, kills_match - diff) if diff > 0 else kills_match + abs(diff)
                     score_str = f"({kills_match}-{deaths_match})"
 
-                    # Check for Master -> Spec Ops promotion
                     is_new = (prev_rating < 1800 and current_rating >= 1800) or (prev_rank == "Master" and current_rank == "Spec Ops")
                     new_tag = " (new)" if is_new else ""
 
                     if current_rank == "Elite Ops" and prev_pos and current_pos:
-                        # Elite Ops Format: x: #15 → #13, 1990 → 1996 (+6) (x-x)
                         line = f"{ign}: #{prev_pos} → #{current_pos}, {prev_rating} → {current_rating} ({diff_str}) {score_str}{new_tag}"
                         updates.append(line)
                     else:
-                        # Spec Ops Format (1800+ MMR): x: 1812 → 1820 (+8) (x-x)
                         line = f"{ign}: {prev_rating} → {current_rating} ({diff_str}) {score_str}{new_tag}"
                         updates.append(line)
 
-            # Update snapshot
             self.previous_snapshot[key] = {
                 "rank": current_rank,
                 "rating": current_rating,
                 "pos": current_pos
             }
 
-        # Deduplicate sent output to prevent re-posting identical update blocks
         current_hash = hash("\n".join(updates))
         if current_hash == self.last_sent_hash:
             return []
