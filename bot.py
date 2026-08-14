@@ -7,9 +7,10 @@ import config
 from cops_api import cops_api_client
 from cops_tracker import snipe_tracker, leaderboard_tracker
 
+# Interactive Pagination View with First, Prev, Next, Last Buttons
 class LeaderboardPaginationView(discord.ui.View):
     def __init__(self, players: list, per_page: int = 10):
-        super().__init__(timeout=180)
+        super().__init__(timeout=300)  # 5 minutes interactive timeout
         self.players = players
         self.per_page = per_page
         self.current_page = 1
@@ -17,8 +18,10 @@ class LeaderboardPaginationView(discord.ui.View):
         self._update_buttons()
 
     def _update_buttons(self):
+        self.first_button.disabled = (self.current_page <= 1)
         self.prev_button.disabled = (self.current_page <= 1)
         self.next_button.disabled = (self.current_page >= self.total_pages)
+        self.last_button.disabled = (self.current_page >= self.total_pages)
 
     def get_page_embed(self) -> discord.Embed:
         start_idx = (self.current_page - 1) * self.per_page
@@ -36,8 +39,15 @@ class LeaderboardPaginationView(discord.ui.View):
             description="\n".join(description_lines),
             color=discord.Color.gold()
         )
-        embed.set_footer(text=f"Page {self.current_page}/{self.total_pages} (Total: {len(self.players)} players) • made by pown")
+        embed.set_footer(text=f"Page {self.current_page}/{self.total_pages} (Total: {len(self.players)} players down to 1800+ MMR) • made by pown")
         return embed
+
+    @discord.ui.button(label="⏮ First", style=discord.ButtonStyle.secondary, custom_id="first_page")
+    async def first_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page = 1
+            self._update_buttons()
+            await interaction.response.edit_message(embed=self.get_page_embed(), view=self)
 
     @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.primary, custom_id="prev_page")
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -50,6 +60,13 @@ class LeaderboardPaginationView(discord.ui.View):
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page < self.total_pages:
             self.current_page += 1
+            self._update_buttons()
+            await interaction.response.edit_message(embed=self.get_page_embed(), view=self)
+
+    @discord.ui.button(label="Last ⏭", style=discord.ButtonStyle.secondary, custom_id="last_page")
+    async def last_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < self.total_pages:
+            self.current_page = self.total_pages
             self._update_buttons()
             await interaction.response.edit_message(embed=self.get_page_embed(), view=self)
 
@@ -135,7 +152,6 @@ async def snipe(interaction: discord.Interaction, ign: str):
         display_name = ign
         status_str = "Offline"
 
-    # Check for duplicate snipe
     added = snipe_tracker.add_target(user_id, display_name)
     if not added:
         await interaction.followup.send(f"⚠️ Player **{display_name}** is already being sniped by you!", ephemeral=True)
@@ -175,7 +191,7 @@ async def unsnipe(interaction: discord.Interaction, ign: str):
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="leaderboard", description="Show official Critical Ops Leaderboard with interactive Arrow buttons")
+@bot.tree.command(name="leaderboard", description="Show official Critical Ops Leaderboard down to 1800+ rating with page skip buttons")
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
     
