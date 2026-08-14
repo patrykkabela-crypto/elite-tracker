@@ -29,6 +29,20 @@ async def on_ready():
     print(f"[TARGET CHANNEL ID] {config.LEADERBOARD_CHANNEL_ID}")
     print(f"==========================================")
     await bot.change_presence(activity=discord.Game(name="Critical Ops | /search /snipe /leaderboard"))
+    
+    # Send online status message to channel 1537846978300354822 so user knows tracker is active
+    try:
+        channel = bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
+        if channel:
+            embed = discord.Embed(
+                title="SPEC OPS+ LEADERBOARD TRACKER ONLINE",
+                description="Bot has connected to Critical Ops live database. Actively monitoring Spec Ops+ & Elite Ops player rank changes...",
+                color=discord.Color.blue()
+            )
+            embed.set_footer(text="made by pown • Auto Leaderboard Tracking")
+            await channel.send(embed=embed)
+    except Exception as e:
+        print(f"[ON_READY WARNING] Could not send startup message: {e}")
 
 # ==================== SLASH COMMANDS ====================
 
@@ -47,7 +61,6 @@ async def search(interaction: discord.Interaction, ign: str):
         await interaction.followup.send(f"Player **{ign}** was not found in Critical Ops database.", ephemeral=True)
         return
 
-    # Clean Blue Embed with perfect spacing
     embed = discord.Embed(
         title=f"Critical Ops Player Profile: {player['ign']}",
         color=discord.Color.blue()
