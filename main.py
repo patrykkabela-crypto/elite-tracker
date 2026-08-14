@@ -9,8 +9,16 @@ from bot import bot
 import config
 
 if __name__ == "__main__":
-    print(f"🚀 Starting Critical Ops Discord Bot on WispByte Hosting...")
+    token = config.DISCORD_TOKEN.strip()
+    if not token:
+        print("❌ ERROR: DISCORD_TOKEN environment variable is missing or empty!")
+        print("Please add DISCORD_TOKEN in your Railway project -> Variables tab.")
+        sys.exit(1)
+
+    print(f"🚀 Starting Critical Ops Discord Bot...")
     print(f"🆔 App ID: {config.DISCORD_APP_ID}")
     print(f"📌 Leaderboard Channel: {config.LEADERBOARD_CHANNEL_ID}")
     
-    bot.run(config.DISCORD_TOKEN)
+    bot.run(token)
+
+
