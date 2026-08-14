@@ -54,8 +54,8 @@ class SnipeTracker:
                     "user_id": user_id,
                     "ign":     ign_name,
                     "message": (
-                        f"<@{user_id}> **{ign_name}** finished a ranked game! "
-                        f"Rating: **{last_rating} → {current_rating} ({sign}{delta})**"
+                        f"**{ign_name}** just finished a ranked game!\n"
+                        f"Rating: **{last_rating:,} → {current_rating:,}** ({sign}{delta})"
                     )
                 })
 

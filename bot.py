@@ -251,34 +251,54 @@ async def cmd_leaderboard(interaction: discord.Interaction):
 @tasks.loop(seconds=15)
 async def background_tracking_loop():
     try:
+        channel = bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
+
         # ---- Snipe Alerts ----
         snipe_alerts = await snipe_tracker.check_snipes(bot)
         for alert in snipe_alerts:
-            user = bot.get_user(alert["user_id"])
-            if user:
-                try:
+            print(f"[SNIPE ALERT] {alert['ign']} — sending to user {alert['user_id']}")
+
+            # Try DM first
+            dm_sent = False
+            try:
+                user = bot.get_user(alert["user_id"]) or await bot.fetch_user(alert["user_id"])
+                if user:
                     await user.send(alert["message"])
-                except Exception as e:
-                    print(f"[SNIPE DM ERROR] Could not DM user {alert['user_id']}: {e}")
+                    dm_sent = True
+                    print(f"[SNIPE DM] Sent DM to {user.name}")
+            except Exception as e:
+                print(f"[SNIPE DM ERROR] DM failed for {alert['user_id']}: {e}")
+
+            # Always post to tracker channel too (so it's never lost)
+            if channel:
+                embed = discord.Embed(
+                    title="Snipe Alert",
+                    description=f"<@{alert['user_id']}> {alert['message']}",
+                    color=discord.Color.orange()
+                )
+                embed.set_footer(text="made by pown • Snipe Tracker")
+                await channel.send(embed=embed)
 
         # ---- Leaderboard Updates ----
         leaderboard_updates = await leaderboard_tracker.check_updates()
         if leaderboard_updates:
-            target_channel = bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
-            if target_channel:
+            if channel:
                 embed = discord.Embed(
                     title="SPEC OPS+ LEADERBOARD TRACKER",
                     description="\n".join(leaderboard_updates),
                     color=discord.Color.green()
                 )
                 embed.set_footer(text="made by pown • Auto Leaderboard Tracking")
-                await target_channel.send(embed=embed)
+                await channel.send(embed=embed)
                 print(f"[TRACKER] Posted {len(leaderboard_updates)} update(s) to channel.")
             else:
-                print(f"[TRACKER WARNING] Channel {config.LEADERBOARD_CHANNEL_ID} not found!")
+                print(f"[TRACKER WARNING] Channel {config.LEADERBOARD_CHANNEL_ID} not found in cache!")
 
     except Exception as e:
+        import traceback
         print(f"[BACKGROUND LOOP ERROR] {e}")
+        traceback.print_exc()
+
 
 
 @background_tracking_loop.before_loop
