@@ -32,7 +32,7 @@ class SnipeTracker:
     async def check_snipes(self, bot: discord.Client) -> List[Dict[str, Any]]:
         alerts = []
         for (user_id, key_ign), info in list(self.targets.items()):
-            player = await cops_api_client.get_player_by_ign(info["ign_display"])
+            player = await cops_api_client.get_player_by_ign(info["ign_display"])  # real MMR via /player/{ign}
             if not player:
                 continue
 
@@ -96,7 +96,7 @@ class LeaderboardTracker:
 
     async def check_updates(self) -> List[str]:
         updates: List[str] = []
-        current_players = await cops_api_client.get_spec_ops_leaderboard()
+        current_players = await cops_api_client.get_elite_leaderboard()  # real MMR from /leaderboard/elite
         if not current_players:
             return []
 

@@ -35,7 +35,7 @@ class LeaderboardPaginationView(discord.ui.View):
             rating  = p.get("rating", 0)
             rank    = p.get("rank", "Unknown")
             ign     = p.get("ign", "?")
-            lines.append(f"**{pos_str}** {ign} — **{rank}** ({rating:,} Rating)")
+            lines.append(f"**{pos_str}** {p['ign']} — **{p['rating']:,}** Rating")
 
         embed = discord.Embed(
             title="CRITICAL OPS LEADERBOARD",
@@ -43,7 +43,7 @@ class LeaderboardPaginationView(discord.ui.View):
             color=discord.Color.gold()
         )
         embed.set_footer(
-            text=f"Page {self.current_page}/{self.total_pages} — {len(self.players)} players (1800+ Rating) • made by pown"
+            text=f"Page {self.current_page}/{self.total_pages} — {len(self.players)} Elite Ops players • made by pown"
         )
         return embed
 
@@ -216,14 +216,14 @@ async def cmd_unsnipe(interaction: discord.Interaction, ign: str):
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="leaderboard", description="Show Critical Ops Leaderboard (1800+ Rating) with page buttons")
+@bot.tree.command(name="leaderboard", description="Show Critical Ops Elite Ops Leaderboard (real MMR) with page buttons")
 async def cmd_leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
 
-    players = await cops_api_client.get_spec_ops_leaderboard()
+    players = await cops_api_client.get_elite_leaderboard()
     if not players:
         await interaction.followup.send(
-            "Could not retrieve Critical Ops Leaderboard at this time. API may be down.",
+            "Could not retrieve Critical Ops Elite Ops Leaderboard. API may be down.",
             ephemeral=True
         )
         return
