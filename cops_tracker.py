@@ -11,7 +11,7 @@ import config
 class SnipeTracker:
     """
     Manages active sniping targets with instant baseline population,
-    anti-spam deduping, and clean match tracking.
+    live DM message editing (no mid-game spam), anti-duplication, and clean formatting.
     """
     def __init__(self):
         self.sent_alert_cache: Set[str] = set()
@@ -21,10 +21,6 @@ class SnipeTracker:
         return db.get_all_snipe_targets()
 
     async def add_target(self, user_id: int, ign: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
-        """
-        Adds a target and immediately populates their live baseline stats.
-        Returns (success, player_data).
-        """
         player = await cops_api_client.get_player_by_ign(ign)
         if not player:
             added = db.add_snipe_target(user_id, ign)
@@ -50,7 +46,8 @@ class SnipeTracker:
                 last_position=current_pos,
                 mid_match=False,
                 match_start_kills=current_kills,
-                match_start_deaths=current_deaths
+                match_start_deaths=current_deaths,
+                live_message_id=None
             )
 
         return added, player
@@ -83,11 +80,12 @@ class SnipeTracker:
                 db.remove_snipe_target(user_id, ign_name)
                 db.hackusate_player(ign_name, user_id, "System Auto-Banned Check", is_banned=True)
                 alerts.append({
-                    "type":    "banned",
-                    "user_id": user_id,
-                    "ign":     ign_name,
+                    "type":            "banned",
+                    "user_id":         user_id,
+                    "ign":             ign_name,
+                    "live_message_id": info.get("live_message_id"),
                     "message": (
-                        f"PLAYER BANNED: Player **{ign_name}** has been BANNED by Critical Ops.\n"
+                        f"<@{user_id}> PLAYER BANNED: Player **{ign_name}** has been BANNED by Critical Ops.\n"
                         f"Target auto-removed from your snipe list."
                     )
                 })
@@ -101,7 +99,9 @@ class SnipeTracker:
             mid_match         = info.get("mid_match", False)
             match_start_k     = info.get("match_start_kills", current_kills)
             match_start_d     = info.get("match_start_deaths", current_deaths)
+            live_message_id   = info.get("live_message_id")
 
+            # Initialize baseline snapshot on first cycle
             if last_rating is None or last_games == 0 or match_start_k == 0:
                 db.update_snipe_state(
                     user_id=user_id,
@@ -114,7 +114,8 @@ class SnipeTracker:
                     last_position=current_pos,
                     mid_match=False,
                     match_start_kills=current_kills,
-                    match_start_deaths=current_deaths
+                    match_start_deaths=current_deaths,
+                    live_message_id=None
                 )
                 continue
 
@@ -149,11 +150,13 @@ class SnipeTracker:
                     pos_str = f" #{current_pos}"
 
                 clean_msg = (
+                    f"<@{user_id}>\n"
                     f"RANKED MATCH FINISHED\n"
                     f"{ign_name}{pos_str} -> {current_rating:,} MMR ({sign_r}{delta_rating})\n"
                     f"Score: +{max(0, delta_k)} Kills, +{max(0, delta_d)} Deaths | Season Games: {current_games} (+1 Game Finished)"
                 )
 
+                # Reset baseline for next match & clear live message ID
                 db.update_snipe_state(
                     user_id=user_id,
                     ign_display=ign_name,
@@ -165,17 +168,19 @@ class SnipeTracker:
                     last_position=current_pos,
                     mid_match=False,
                     match_start_kills=current_kills,
-                    match_start_deaths=current_deaths
+                    match_start_deaths=current_deaths,
+                    live_message_id=None
                 )
 
                 alerts.append({
-                    "type":    "match_ended",
-                    "user_id": user_id,
-                    "ign":     ign_name,
-                    "message": clean_msg
+                    "type":            "match_ended",
+                    "user_id":         user_id,
+                    "ign":             ign_name,
+                    "live_message_id": live_message_id,
+                    "message":         clean_msg
                 })
 
-            # Scenario B: LIVE MID-GAME UPDATE
+            # Scenario B: LIVE MID-GAME UPDATE (Kills/Deaths increasing during match)
             elif (kills_increased or deaths_increased) and not game_count_increased:
                 live_k = current_kills - match_start_k
                 live_d = current_deaths - match_start_d
@@ -185,10 +190,17 @@ class SnipeTracker:
                 if live_d > 100 or live_d < 0:
                     live_d = max(0, current_deaths - last_deaths)
 
-                dedup_sig = f"mid:{user_id}:{ign_name.lower()}:{current_kills}:{current_deaths}"
+                dedup_sig = f"mid:{user_id}:{ign_name.lower()}:{live_k}:{live_d}"
                 if dedup_sig in self.sent_alert_cache:
                     continue
                 self.sent_alert_cache.add(dedup_sig)
+
+                clean_msg = (
+                    f"<@{user_id}>\n"
+                    f"IN-GAME SCORE UPDATE\n"
+                    f"Player {ign_name} is currently in a ranked match\n"
+                    f"Live Mid-Game Score: +{max(0, live_k)} Kills, +{max(0, live_d)} Deaths"
+                )
 
                 db.update_snipe_state(
                     user_id=user_id,
@@ -201,20 +213,16 @@ class SnipeTracker:
                     last_position=current_pos,
                     mid_match=True,
                     match_start_kills=match_start_k,
-                    match_start_deaths=match_start_d
-                )
-
-                clean_msg = (
-                    f"IN-GAME SCORE UPDATE\n"
-                    f"Player {ign_name} is currently in a ranked match\n"
-                    f"Live Mid-Game Score: +{max(0, live_k)} Kills, +{max(0, live_d)} Deaths"
+                    match_start_deaths=match_start_d,
+                    live_message_id=live_message_id
                 )
 
                 alerts.append({
-                    "type":    "live_mid_game",
-                    "user_id": user_id,
-                    "ign":     ign_name,
-                    "message": clean_msg
+                    "type":            "live_mid_game",
+                    "user_id":         user_id,
+                    "ign":             ign_name,
+                    "live_message_id": live_message_id,
+                    "message":         clean_msg
                 })
 
         return alerts

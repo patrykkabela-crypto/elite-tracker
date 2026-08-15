@@ -487,7 +487,7 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
             f"Now actively sniping **{display_name}**\n"
             f"{profile_line}\n\n"
             f"Live In-Game Score Alerts Enabled:\n"
-            f"• During Game: Receive live mid-match score updates.\n"
+            f"• During Game: Receive live mid-match score updates (message edited live).\n"
             f"• Match Completion: Instant DM summary when season games count increases (+1 Game Finished).\n\n"
             f"Notifications are sent to your DMs ONLY."
         ),
@@ -584,22 +584,54 @@ async def cmd_leaderboard(interaction: discord.Interaction):
 
 # ==================== BACKGROUND TRACKING LOOP ====================
 
-@tasks.loop(seconds=10)
+@tasks.loop(seconds=8)
 async def background_tracking_loop():
     try:
         channel = bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
 
-        # ---- Snipe Alerts (DMs ONLY) ----
+        # ---- Snipe Alerts (DMs ONLY with Live Message Editing & User Tagging) ----
         snipe_alerts = await snipe_tracker.check_snipes(bot)
         for alert in snipe_alerts:
-            print(f"[SNIPE ALERT] [{alert['type']}] {alert['ign']} — sending DM to user {alert['user_id']}")
+            u_id   = alert["user_id"]
+            ign    = alert["ign"]
+            a_type = alert["type"]
+            msg_id = alert.get("live_message_id")
+
             try:
-                user = bot.get_user(alert["user_id"]) or await bot.fetch_user(alert["user_id"])
-                if user:
+                user = bot.get_user(u_id) or await bot.fetch_user(u_id)
+                if not user:
+                    continue
+
+                dm_channel = user.dm_channel or await user.create_dm()
+
+                if a_type == "live_mid_game":
+                    edited = False
+                    if msg_id and dm_channel:
+                        try:
+                            existing_msg = await dm_channel.fetch_message(msg_id)
+                            if existing_msg:
+                                await existing_msg.edit(content=alert["message"])
+                                edited = True
+                                print(f"[SNIPE LIVE EDIT SUCCESS] Edited DM {msg_id} for user {user.name}")
+                        except Exception as ex:
+                            print(f"[SNIPE LIVE EDIT WARNING] Could not edit msg {msg_id}: {ex}")
+
+                    if not edited:
+                        sent_msg = await user.send(alert["message"])
+                        db.update_live_message_id(u_id, ign, sent_msg.id)
+                        print(f"[SNIPE DM LIVE START] Sent new live DM {sent_msg.id} to user {user.name}")
+
+                elif a_type == "match_ended":
+                    db.update_live_message_id(u_id, ign, None)
+                    sent_msg = await user.send(alert["message"])
+                    print(f"[SNIPE DM MATCH FINISHED] Sent match ended DM to user {user.name}")
+
+                elif a_type == "banned":
+                    db.update_live_message_id(u_id, ign, None)
                     await user.send(alert["message"])
-                    print(f"[SNIPE DM SUCCESS] Sent DM to {user.name}")
+
             except Exception as e:
-                print(f"[SNIPE DM ERROR] Failed DM for user {alert['user_id']}: {e}")
+                print(f"[SNIPE DM ERROR] Failed DM for user {u_id}: {e}")
 
         # ---- Auto Leaderboard Updates ----
         leaderboard_updates = await leaderboard_tracker.check_updates()
