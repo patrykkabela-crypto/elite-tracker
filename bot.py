@@ -7,63 +7,67 @@ from cops_api import cops_api_client
 from cops_tracker import snipe_tracker, leaderboard_tracker
 from database import db
 
-# ==================== SKIN CATALOG DATA ====================
+# ==================== CRITICAL OPS GENUINE SKIN CATALOG DATA ====================
 
 SKIN_CATALOG = {
     "Knives": {
-        "Kukri": ["Dragonfly", "Golden Feather", "Damascus", "Crimson Tide", "Obsidian"],
-        "Remix": ["Hyperion", "Glitch", "Cyberpunk", "Solar Flare", "Neon Wave"],
-        "Karambit": ["Crimson Web", "Fade", "Lore", "Doppler", "Tiger Tooth"],
-        "Balisong": ["Asimov", "Spectrum", "Marble Fade", "Case Hardened", "Nightfall"],
-        "Tac-Knife": ["Urban Masked", "Scorched", "Safari Mesh", "Rust Coat", "Blaze"]
+        "Remix": ["Hyperion", "Glitch", "Cyberpunk", "Solar", "Neon", "Thermal"],
+        "Kukri": ["Golden Feather", "Dragonfly", "Crimson", "Obsidian", "Damascus"],
+        "Karambit": ["Fade", "Doppler", "Glitch", "Crimson", "Golden Age", "Thermal"],
+        "Balisong": ["Spectrum", "Neon", "Hyperion", "Overdrive", "Void", "Chroma"],
+        "Tac-Knife": ["Tactical", "Urban", "Scorched", "Safari", "Midnight", "Rust"],
+        "Pipe Wrench": ["Heavy Metal", "Rust", "Gold", "Chrome", "Steel"]
     },
     "Gloves": {
+        "Specialist": ["Emerald", "Crimson", "Snow", "Gold Touch", "Stealth"],
         "Operative": ["Blackout", "Venom", "Cobalt", "Inferno", "Viper"],
-        "Specialist": ["Emerald", "Crimson", "Snow Camo", "Gold Touch", "Stealth"],
-        "Tactician": ["Desert Storm", "Digital Camo", "Ghost", "Apex", "Overdrive"]
+        "Tactician": ["Desert Storm", "Digital", "Ghost", "Apex", "Overdrive"]
     },
     "Pistols": {
-        "P250": ["Asimov", "Sand Dune", "Cyber", "Supernova", "Pulse"],
-        "GSR 1911": ["Classic Chrome", "Royal", "Vintage", "Dragon", "Golden Age"],
+        "P250": ["Cyber", "Supernova", "Pulse", "Sandstorm", "Neon"],
+        "GSR 1911": ["Chrome", "Royal", "Dragon", "Golden Age", "Vintage"],
         "MR96": ["Python", "Wild West", "Black Gold", "Magnum Force", "Redline"],
-        "Deagle": ["Blaze", "Golden Dragon", "Printstream", "Mecha", "Code Red"]
+        "Deagle": ["Golden Dragon", "Blaze", "Code Red", "Mecha", "Royal"],
+        "Dual MTX": ["Double Trouble", "Cyber", "Inferno", "Pulse"]
     },
     "SMGs": {
-        "MP5": ["Sub Zero", "Neon Rider", "Chrono", "Reactor", "Acid Melt"],
+        "MP5": ["Sub Zero", "Neon Rider", "Chrono", "Acid", "Velocity"],
         "MP7": ["Armor Core", "Impulse", "Special Ops", "Velocity", "Tsunami"],
-        "P90": ["Asimov", "Grim", "Cold War", "Death Adder", "Vortex"],
-        "Vector": ["Hyper Beast", "Speed Demon", "Cyberpunk", "Electric", "Phantom"]
+        "P90": ["Grim", "Cold War", "Death Adder", "Vortex", "Hyperion"],
+        "Vector": ["Speed Demon", "Cyberpunk", "Electric", "Phantom", "Overdrive"]
     },
     "Rifles": {
-        "AK-47": ["Dragon", "Fire Serpent", "Valkyrie", "Redline", "Asimov", "Golden Age"],
-        "M4": ["Howl", "Hyperion", "Cyberpunk", "Mecha", "Printstream", "Poseidon"],
+        "AK-47": ["Dragon", "Valkyrie", "Crimson", "Circuit", "Tiger", "Glitch", "Neon Wave"],
+        "M4": ["Cyberpunk", "Vampire", "Valkyrie", "Golden Age", "Spectre", "Frostbite"],
         "HK417": ["Sniper Core", "Spectre", "Overwatch", "Titan", "Shadow"],
-        "SA58": ["Warfare", "Commando", "Ironclad", "Tactical", "Apex"]
+        "SA58": ["Warfare", "Commando", "Ironclad", "Tactical", "Apex"],
+        "AR-15": ["Tactical", "Stealth", "Phantom", "Viper", "Midnight"],
+        "SG 551": ["Pulse", "Cyber", "Vortex", "Hyperion", "Overdrive"]
     },
     "Shotguns": {
-        "FP6": ["Bulldozer", "Carnage", "Thunder", "Inferno", "Heavy Hitter"],
+        "FP6": ["Bulldozer", "Carnage", "Heavy Hitter", "Inferno", "Thunder"],
         "Super 90": ["Enforcer", "Riot", "Vulkan", "Overkill", "Titanium"]
     },
     "Snipers": {
-        "TRG-22": ["Dragon Lore", "Hyperion", "Gungnir", "Asimov", "Frostbite"],
+        "TRG-22": ["Dragon", "Hyperion", "Gungnir", "Frostbite", "Vectra"],
         "M14": ["Marksman", "Hunter", "Stalker", "Ghost", "Precision"],
         "URAT": ["Reaper", "Void", "Oblivion", "Eclipse", "Supernova"]
     }
 }
 
 AI_VALUATIONS = {
-    "Dragon Lore": "AI Valuation: EXTREMELY RARE / HIGH PROFIT POTENTIAL! (WORTH TO BUY)",
-    "Howl": "AI Valuation: LEGENDARY SKIN! High resale demand (WORTH TO BUY)",
-    "Asimov": "AI Valuation: POPULAR METAGAME SKIN! Best offer pricing (WORTH TO BUY)",
-    "Fade": "AI Valuation: HIGH TIER COLLECTOR ITEM! Great buy request candidate.",
-    "Crimson Web": "AI Valuation: TOP TIER ITEM! Highly liquid on Marketplace."
+    "Dragon": "AI Valuation: RARE C-OPS SKIN (HIGH DEMAND - WORTH TO BUY)",
+    "Valkyrie": "AI Valuation: TOP TIER C-OPS SKIN (GREAT VALUE - WORTH TO BUY)",
+    "Fade": "AI Valuation: HIGH VALUE KNIFE SKIN (BEST OFFER CANDIDATE)",
+    "Hyperion": "AI Valuation: LEGENDARY C-OPS MARKET ITEM (HIGH LIQUIDITY)",
+    "Golden Age": "AI Valuation: EXCLUSIVE EVENT ITEM (HIGH PROFIT POTENTIAL)"
 }
 
 def get_ai_recommendation(skin_name: str) -> str:
     for key, val in AI_VALUATIONS.items():
         if key.lower() in skin_name.lower():
             return val
-    return "AI Valuation: RECOMMENDED MARKET ITEM (Good Liquidity & Fair Value)"
+    return "AI Valuation: RECOMMENDED C-OPS MARKETPLACE SKIN (Fair Credit Price)"
 
 # ==================== HACKUSATE BUTTON VIEW ====================
 

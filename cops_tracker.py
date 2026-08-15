@@ -1,7 +1,7 @@
 import discord
 import asyncio
 import time
-from typing import Dict, Any, List, Set, Tuple
+from typing import Dict, Any, List, Set, Tuple, Optional
 from cops_api import cops_api_client
 from database import db
 import config
@@ -37,7 +37,6 @@ class SnipeTracker:
         current_games  = player.get("season_games", player.get("career_games", 0))
         current_pos    = player.get("rank_position")
 
-        # Save complete baseline immediately so initial check never fires fake alert
         added = db.add_snipe_target(user_id, display_name)
         if added:
             db.update_snipe_state(
@@ -103,7 +102,6 @@ class SnipeTracker:
             match_start_k     = info.get("match_start_kills", current_kills)
             match_start_d     = info.get("match_start_deaths", current_deaths)
 
-            # Safety Guard: If baseline is uninitialized or games_played was 0, populate silently
             if last_rating is None or last_games == 0 or match_start_k == 0:
                 db.update_snipe_state(
                     user_id=user_id,
@@ -125,19 +123,17 @@ class SnipeTracker:
             kills_increased      = (current_kills > last_kills)
             deaths_increased     = (current_deaths > last_deaths)
 
-            # Scenario A: RANKED MATCH FINISHED (Games Played +1 or Rating changed)
+            # Scenario A: RANKED MATCH FINISHED
             if game_count_increased or rating_changed:
                 delta_rating = current_rating - last_rating
                 delta_k      = current_kills - match_start_k
                 delta_d      = current_deaths - match_start_d
 
-                # Sanity guard against giant baseline jump anomalies
                 if delta_k > 100 or delta_k < 0:
                     delta_k = max(0, current_kills - last_kills)
                 if delta_d > 100 or delta_d < 0:
                     delta_d = max(0, current_deaths - last_deaths)
 
-                # Dedup signature check
                 dedup_sig = f"{user_id}:{ign_name.lower()}:{current_games}:{current_rating}:{current_kills}"
                 if dedup_sig in self.sent_alert_cache:
                     continue
@@ -158,7 +154,6 @@ class SnipeTracker:
                     f"Score: +{max(0, delta_k)} Kills, +{max(0, delta_d)} Deaths | Season Games: {current_games} (+1 Game Finished)"
                 )
 
-                # Update baseline for next match
                 db.update_snipe_state(
                     user_id=user_id,
                     ign_display=ign_name,
@@ -180,7 +175,7 @@ class SnipeTracker:
                     "message": clean_msg
                 })
 
-            # Scenario B: LIVE MID-GAME UPDATE (Kills/Deaths increasing during ongoing game)
+            # Scenario B: LIVE MID-GAME UPDATE
             elif (kills_increased or deaths_increased) and not game_count_increased:
                 live_k = current_kills - match_start_k
                 live_d = current_deaths - match_start_d
