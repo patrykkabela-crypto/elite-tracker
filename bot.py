@@ -118,7 +118,6 @@ class SkinSelectDropdown(discord.ui.Select):
         skin_name = self.values[0]
         ai_advice = get_ai_recommendation(skin_name)
         
-        # Save subscription to DB
         db.add_marketplace_subscription(
             user_id=interaction.user.id,
             category=self.category,
@@ -301,7 +300,7 @@ class CriticalOpsBot(commands.Bot):
         print(f"==========================================")
 
         await self.change_presence(
-            activity=discord.Game(name="Critical Ops | /snipe /marketplaceselectskin /hackerlist")
+            activity=discord.Game(name="Critical Ops | /search /snipe /marketplaceselectskin")
         )
 
         try:
@@ -322,7 +321,7 @@ class CriticalOpsBot(commands.Bot):
                     title="SPEC OPS+ LEADERBOARD & MARKETPLACE TRACKER ONLINE",
                     description=(
                         "Bot connected to Critical Ops live API & Railway DB.\n"
-                        "Actively monitoring Spec Ops+ rank changes, Marketplace transactions, & Snipe DMs..."
+                        "Actively monitoring Spec Ops+ rank changes, Live Mid-Game Scores, & Marketplace..."
                     ),
                     color=discord.Color.blue()
                 )
@@ -340,7 +339,7 @@ bot = CriticalOpsBot()
 
 # ==================== SLASH COMMANDS ====================
 
-@bot.tree.command(name="search", description="Search a Critical Ops player profile")
+@bot.tree.command(name="search", description="Search a Critical Ops player profile with detailed season & creation info")
 @app_commands.describe(ign="Player In-Game Name (IGN)")
 async def cmd_search(interaction: discord.Interaction, ign: str):
     await interaction.response.defer()
@@ -354,18 +353,44 @@ async def cmd_search(interaction: discord.Interaction, ign: str):
         title=f"Critical Ops Player Profile: {player['ign']}{banned_str}",
         color=discord.Color.red() if player.get("banned") else discord.Color.blue()
     )
-    embed.add_field(name="IGN",              value=f"`{player['ign']}`",                              inline=True)
-    embed.add_field(name="Account ID",       value=f"`{player['id']}`",                              inline=True)
-    embed.add_field(name="Rank & Rating",    value=f"**{player['rank']}** ({player['rating']:,} Rating)", inline=True)
-    embed.add_field(name="Kills / Deaths",   value=f"{player['kills']:,} / {player['deaths']:,} (K/D: **{player['kd_ratio']}**)", inline=False)
-    embed.add_field(name="Peak / Lowest",    value=f"Peak: **{player['peak_rating']:,}** | Lowest: **{player['lowest_rating']:,}**", inline=False)
-    embed.add_field(name="Account Age",      value=player['account_age_str'],                        inline=True)
-    embed.add_field(name="Level",            value=f"Level **{player['level']}**",                   inline=True)
-    embed.set_footer(text="made by pown")
+    embed.add_field(name="IGN",                  value=f"`{player['ign']}`",                              inline=True)
+    embed.add_field(name="Account ID",           value=f"`{player['id']}`",                              inline=True)
+    embed.add_field(name="Rank & Rating",        value=f"**{player['rank']}** ({player['rating']:,} MMR)", inline=True)
+    
+    # Season Games Breakdown
+    sn = player.get('season_num', 17)
+    sg = player.get('season_games', 0)
+    sw = player.get('season_wins', 0)
+    sl = player.get('season_losses', 0)
+    swr = player.get('season_winrate', 0)
+    sk = player.get('season_kills', 0)
+    sd = player.get('season_deaths', 0)
+    skd = player.get('season_kd', 0)
+
+    embed.add_field(
+        name=f"🎮 Season {sn} Ranked Breakdown",
+        value=(
+            f"Games Played: **{sg:,}** ({sw} W / {sl} L - **{swr}% Winrate**)\n"
+            f"Kills / Deaths: **{sk:,}** / **{sd:,}** (K/D: **{skd}**)"
+        ),
+        inline=False
+    )
+
+    # Career Breakdown
+    embed.add_field(
+        name="🏆 Total Career Ranked Stats",
+        value=f"Games: **{player['career_games']:,}** | Kills: **{player['career_kills']:,}** | Deaths: **{player['career_deaths']:,}** | Career K/D: **{player['kd_ratio']}**",
+        inline=False
+    )
+
+    embed.add_field(name="Peak / Lowest Rating",  value=f"Peak: **{player['peak_rating']:,}** | Lowest: **{player['lowest_rating']:,}**", inline=False)
+    embed.add_field(name="🗓 Account Creation & History", value=f"`{player['account_creation_detail']}`", inline=False)
+    embed.add_field(name="Level",                value=f"Level **{player['level']}**",                   inline=True)
+    embed.set_footer(text="made by pown • Detailed Profile Analytics")
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="snipe", description="Snipe and track a player's ranked match status (DM Alerts Only)")
+@bot.tree.command(name="snipe", description="Snipe and track player with LIVE mid-game score & match notifications (DMs Only)")
 @app_commands.describe(ign="Player IGN to snipe")
 async def cmd_snipe(interaction: discord.Interaction, ign: str):
     await interaction.response.defer()
@@ -386,7 +411,10 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
             )
             return
 
-        profile_line = f"**{rank_str}** — {rating_str} MMR{pos_str}\nKills: **{player['kills']:,}** | Deaths: **{player['deaths']:,}**"
+        profile_line = (
+            f"**{rank_str}** — {rating_str} MMR{pos_str}\n"
+            f"Season Games: **{player['season_games']:,}** | Season K/D: **{player['season_kills']:,} / {player['season_deaths']:,}**"
+        )
     else:
         display_name = ign
         profile_line = "Player not found in database — will still track rating changes."
@@ -404,12 +432,14 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
         description=(
             f"Now actively sniping **{display_name}**\n"
             f"{profile_line}\n\n"
-            f"📩 **Notifications will be sent to your DMs ONLY.**\n"
-            f"Click the button below to add them to the Hacker Watchlist."
+            f"🔴 **Live In-Game Score Alerts Enabled:**\n"
+            f"• **During Game**: Receive live mid-match score updates (kills/deaths boosted in real-time).\n"
+            f"• **Match Completion**: Instant DM summary when season games count increases (+1 Game Finished).\n\n"
+            f"📩 **Notifications are sent to your DMs ONLY.**"
         ),
         color=discord.Color.dark_purple()
     )
-    embed.set_footer(text="made by pown • Direct Message Alerts")
+    embed.set_footer(text="made by pown • Direct Message Live Snipe System")
     view = HackusateView(target_ign=display_name, user_id=user_id, user_name=interaction.user.name)
     await interaction.followup.send(embed=embed, view=view)
 
@@ -500,7 +530,7 @@ async def cmd_leaderboard(interaction: discord.Interaction):
 
 # ==================== BACKGROUND TRACKING LOOP ====================
 
-@tasks.loop(seconds=10)
+@tasks.loop(seconds=8)
 async def background_tracking_loop():
     try:
         channel = bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
@@ -508,7 +538,7 @@ async def background_tracking_loop():
         # ---- Snipe Alerts (DMs ONLY) ----
         snipe_alerts = await snipe_tracker.check_snipes(bot)
         for alert in snipe_alerts:
-            print(f"[SNIPE ALERT] {alert['ign']} — sending DM to user {alert['user_id']}")
+            print(f"[SNIPE ALERT] [{alert['type']}] {alert['ign']} — sending DM to user {alert['user_id']}")
             try:
                 user = bot.get_user(alert["user_id"]) or await bot.fetch_user(alert["user_id"])
                 if user:

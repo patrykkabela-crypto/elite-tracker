@@ -3,10 +3,8 @@ import json
 import sqlite3
 from typing import Dict, Any, List, Tuple, Optional
 
-# File path for permanent local backup file
 BACKUP_FILE = "snipe_backup.json"
 
-# Check if Railway PostgreSQL DATABASE_URL is valid
 raw_db_url = os.getenv("DATABASE_URL", "").strip()
 
 if raw_db_url and ("postgres://" in raw_db_url or "postgresql://" in raw_db_url) and not raw_db_url.startswith("${"):
@@ -20,7 +18,7 @@ if raw_db_url and ("postgres://" in raw_db_url or "postgresql://" in raw_db_url)
         test_conn.close()
         DATABASE_URL = raw_db_url
         USE_PG = True
-        print("[DB] Successfully connected to Railway PostgreSQL Database.")
+        print("[DB] Connected to Railway PostgreSQL Database.")
     except Exception as e:
         print(f"[DB WARNING] Could not connect to PostgreSQL ({e}). Using local persistent backup.")
         DATABASE_URL = ""
@@ -33,9 +31,8 @@ else:
 
 class DatabaseManager:
     """
-    Fail-Safe Multi-Storage Database Manager:
-    Supports PostgreSQL (Railway) & Local SQLite + JSON Backup.
-    Handles snipe targets, leaderboard snapshots, hacker watchlist, and marketplace tracking.
+    Fail-Safe Multi-Storage Database Manager with auto-migration,
+    live match state tracking, and hacker watchlist.
     """
     def __init__(self, sqlite_path: str = "bot_data.db"):
         self.sqlite_path = sqlite_path
@@ -70,8 +67,12 @@ class DatabaseManager:
                             state VARCHAR(50) DEFAULT 'idle',
                             kills INT DEFAULT 0,
                             deaths INT DEFAULT 0,
+                            games_played INT DEFAULT 0,
                             last_rating INT DEFAULT NULL,
                             last_position INT DEFAULT NULL,
+                            mid_match BOOLEAN DEFAULT FALSE,
+                            match_start_kills INT DEFAULT 0,
+                            match_start_deaths INT DEFAULT 0,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             PRIMARY KEY (user_id, ign_lowercase)
                         );
@@ -120,8 +121,12 @@ class DatabaseManager:
                             state TEXT DEFAULT 'idle',
                             kills INTEGER DEFAULT 0,
                             deaths INTEGER DEFAULT 0,
+                            games_played INTEGER DEFAULT 0,
                             last_rating INTEGER DEFAULT NULL,
                             last_position INTEGER DEFAULT NULL,
+                            mid_match INTEGER DEFAULT 0,
+                            match_start_kills INTEGER DEFAULT 0,
+                            match_start_deaths INTEGER DEFAULT 0,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             PRIMARY KEY (user_id, ign_lowercase)
                         );
@@ -161,6 +166,22 @@ class DatabaseManager:
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         );
                     """)
+                
+                # Auto-Migration for existing databases
+                columns_to_add = [
+                    ("games_played", "INTEGER DEFAULT 0" if not self.use_pg else "INT DEFAULT 0"),
+                    ("last_position", "INTEGER DEFAULT NULL" if not self.use_pg else "INT DEFAULT NULL"),
+                    ("mid_match", "INTEGER DEFAULT 0" if not self.use_pg else "BOOLEAN DEFAULT FALSE"),
+                    ("match_start_kills", "INTEGER DEFAULT 0" if not self.use_pg else "INT DEFAULT 0"),
+                    ("match_start_deaths", "INTEGER DEFAULT 0" if not self.use_pg else "INT DEFAULT 0")
+                ]
+
+                for col_name, col_def in columns_to_add:
+                    try:
+                        cursor.execute(f"ALTER TABLE snipe_targets ADD COLUMN {col_name} {col_def}")
+                    except Exception:
+                        pass # Column already exists
+
                 conn.commit()
         except Exception as e:
             print(f"[DB ERROR] Database initialization error: {e}")
@@ -199,8 +220,12 @@ class DatabaseManager:
             "state": "idle",
             "kills": 0,
             "deaths": 0,
+            "games_played": 0,
             "last_rating": None,
-            "last_position": None
+            "last_position": None,
+            "mid_match": False,
+            "match_start_kills": 0,
+            "match_start_deaths": 0
         }
         self._save_json_backup(backup_data)
 
@@ -253,7 +278,7 @@ class DatabaseManager:
 
         return removed_json or removed_sql
 
-    def update_snipe_state(self, user_id: int, ign_display: str, state: str, last_rating: int, kills: int = 0, deaths: int = 0, last_position: Optional[int] = None):
+    def update_snipe_state(self, user_id: int, ign_display: str, state: str, last_rating: int, kills: int = 0, deaths: int = 0, games_played: int = 0, last_position: Optional[int] = None, mid_match: bool = False, match_start_kills: int = 0, match_start_deaths: int = 0):
         ign_lower = ign_display.lower()
         key_str = f"{user_id}:{ign_lower}"
         
@@ -263,18 +288,23 @@ class DatabaseManager:
             backup_data[key_str]["last_rating"] = last_rating
             backup_data[key_str]["kills"] = kills
             backup_data[key_str]["deaths"] = deaths
+            backup_data[key_str]["games_played"] = games_played
             backup_data[key_str]["last_position"] = last_position
+            backup_data[key_str]["mid_match"] = mid_match
+            backup_data[key_str]["match_start_kills"] = match_start_kills
+            backup_data[key_str]["match_start_deaths"] = match_start_deaths
             self._save_json_backup(backup_data)
 
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 ph = "%s" if self.use_pg else "?"
+                m_val = 1 if mid_match else 0
                 cursor.execute(f"""
                     UPDATE snipe_targets
-                    SET state = {ph}, last_rating = {ph}, kills = {ph}, deaths = {ph}, last_position = {ph}
+                    SET state = {ph}, last_rating = {ph}, kills = {ph}, deaths = {ph}, games_played = {ph}, last_position = {ph}, mid_match = {ph}, match_start_kills = {ph}, match_start_deaths = {ph}
                     WHERE user_id = {ph} AND ign_lowercase = {ph}
-                """, (state, last_rating, kills, deaths, last_position, user_id, ign_lower))
+                """, (state, last_rating, kills, deaths, games_played, last_position, m_val if not self.use_pg else mid_match, match_start_kills, match_start_deaths, user_id, ign_lower))
                 conn.commit()
         except Exception as e:
             print(f"[DB ERROR] update_snipe_state failed: {e}")
@@ -291,14 +321,18 @@ class DatabaseManager:
                 "state": item.get("state", "idle"),
                 "kills": item.get("kills", 0),
                 "deaths": item.get("deaths", 0),
+                "games_played": item.get("games_played", 0),
                 "last_rating": item.get("last_rating"),
-                "last_position": item.get("last_position")
+                "last_position": item.get("last_position"),
+                "mid_match": bool(item.get("mid_match", False)),
+                "match_start_kills": item.get("match_start_kills", 0),
+                "match_start_deaths": item.get("match_start_deaths", 0)
             }
 
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT user_id, ign_lowercase, ign_display, state, kills, deaths, last_rating, last_position FROM snipe_targets")
+                cursor.execute("SELECT user_id, ign_lowercase, ign_display, state, kills, deaths, games_played, last_rating, last_position, mid_match, match_start_kills, match_start_deaths FROM snipe_targets")
                 for row in cursor.fetchall():
                     u_id = int(row["user_id"])
                     ign_low = row["ign_lowercase"]
@@ -308,8 +342,12 @@ class DatabaseManager:
                         "state": row["state"],
                         "kills": row["kills"] or 0,
                         "deaths": row["deaths"] or 0,
+                        "games_played": row.get("games_played", 0) or 0,
                         "last_rating": row["last_rating"],
-                        "last_position": row.get("last_position")
+                        "last_position": row.get("last_position"),
+                        "mid_match": bool(row.get("mid_match", False)),
+                        "match_start_kills": row.get("match_start_kills", 0) or 0,
+                        "match_start_deaths": row.get("match_start_deaths", 0) or 0
                     }
         except Exception as e:
             print(f"[DB ERROR] get_all_snipe_targets failed: {e}")
@@ -363,9 +401,6 @@ class DatabaseManager:
     # ==================== HACKER LIST (HACKUSATE) ====================
 
     def hackusate_player(self, ign: str, reported_by: int, reporter_name: str, is_banned: bool = False) -> int:
-        """
-        Adds a player to the hacker list or increments their hackusation count.
-        """
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
