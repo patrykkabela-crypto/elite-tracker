@@ -103,6 +103,58 @@ class HackusateView(discord.ui.View):
 
 # ==================== MARKETPLACE SELECT SKIN VIEWS ====================
 
+class CustomSkinModal(discord.ui.Modal, title="Custom Critical Ops Skin Input"):
+    skin_name_input = discord.ui.TextInput(
+        label="Exact C-Ops Skin Name",
+        placeholder="Type any Tier 1-7 skin name (e.g., Valkyrie, Glitch, Dragon...)",
+        required=True,
+        max_length=50
+    )
+
+    def __init__(self, category: str, gun_name: str):
+        super().__init__()
+        self.category = category
+        self.gun_name = gun_name
+
+    async def on_submit(self, interaction: discord.Interaction):
+        skin_name = self.skin_name_input.value.strip()
+        ai_advice = get_ai_recommendation(skin_name)
+        
+        db.add_marketplace_subscription(
+            user_id=interaction.user.id,
+            category=self.category,
+            gun_name=self.gun_name,
+            skin_name=skin_name,
+            track_type="both"
+        )
+
+        embed = discord.Embed(
+            title=f"Marketplace Snipe Activated: {self.gun_name} | {skin_name}",
+            description=(
+                f"Now tracking **{self.gun_name} — {skin_name}** live on Critical Ops Marketplace\n\n"
+                f"{ai_advice}\n\n"
+                f"Live Notifications Enabled:\n"
+                f"• Sell Requests: Player X is Selling {skin_name} for X credits best offer\n"
+                f"• Buy Requests: Player X bought requested {skin_name} for X credits best offer"
+            ),
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text="made by pown • Live C-Ops Marketplace AI Notifier")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class SkinSelectView(discord.ui.View):
+    def __init__(self, category: str, gun_name: str, options_list: list):
+        super().__init__(timeout=600)
+        self.category = category
+        self.gun_name = gun_name
+        self.add_item(SkinSelectDropdown(category, gun_name, options_list))
+
+    @discord.ui.button(label="✍️ Type Custom Skin Name", style=discord.ButtonStyle.secondary, custom_id="custom_skin_btn")
+    async def custom_skin_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CustomSkinModal(self.category, self.gun_name))
+
+
 class SkinSelectDropdown(discord.ui.Select):
     def __init__(self, category: str, gun_name: str, options_list: list):
         self.category = category
@@ -164,12 +216,14 @@ class GunSelectDropdown(discord.ui.Select):
         gun_name = self.values[0]
         skins = self.guns_dict.get(gun_name, [])
         
-        view = discord.ui.View()
-        view.add_item(SkinSelectDropdown(self.category, gun_name, skins))
+        view = SkinSelectView(self.category, gun_name, skins)
         
         embed = discord.Embed(
             title=f"Select Skin for {gun_name}",
-            description=f"Choose which **{gun_name}** skin you want to snipe on the C-Ops Marketplace:",
+            description=(
+                f"Choose which **{gun_name}** skin you want to snipe on C-Ops Marketplace,\n"
+                f"or click **✍️ Type Custom Skin Name** to type any specific C-Ops Tier 1-7 skin name:"
+            ),
             color=discord.Color.blue()
         )
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -317,7 +371,6 @@ class CriticalOpsBot(commands.Bot):
         except Exception as e:
             print(f"[BOT WARNING] Guild sync failed: {e}")
 
-        # Send startup notification
         try:
             channel = self.get_channel(config.LEADERBOARD_CHANNEL_ID)
             if channel:
@@ -471,12 +524,12 @@ async def cmd_unsnipe(interaction: discord.Interaction, ign: str):
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="marketplaceselectskin", description="Select skin to snipe on Critical Ops Marketplace with AI Valuation")
+@bot.tree.command(name="marketplaceselectskin", description="Select or type skin to snipe on Critical Ops Marketplace with AI Valuation")
 async def cmd_marketplaceselectskin(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Critical Ops Marketplace Skin Snipe",
         description=(
-            "Select the weapon category below to pick the skin you want to snipe.\n"
+            "Select the weapon category below to pick a skin or type any specific Tier 1-7 C-Ops skin name.\n"
             "Our AI system will analyze item valuation, best offers, buy requests, and sell requests live from C-Ops Marketplace!"
         ),
         color=discord.Color.gold()
