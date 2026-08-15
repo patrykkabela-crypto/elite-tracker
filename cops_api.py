@@ -28,32 +28,29 @@ def format_player_ign(raw_name: str, tag: Optional[str] = None) -> str:
     return clean_name
 
 
-def calculate_skin_market_valuation(gun_name: str, skin_name: str) -> Dict[str, Any]:
+def calculate_skin_market_valuation(gun_name: str, skin_name: str, custom_target_price: Optional[int] = None) -> Dict[str, Any]:
     """
-    Computes algorithmic market valuation (Min Price, Max Price, Fair Value, Target Buy, Target Sell)
-    for Critical Ops marketplace skin arbitrage.
+    Computes accurate Critical Ops marketplace skin pricing (Tier 1-7 realistic values).
+    Firearms: 15-75 Credits. Knives/Gloves: 250-1200 Credits.
     """
-    seed_str = f"{gun_name}:{skin_name}".lower()
-    hash_val = int(hashlib.md5(seed_str.encode('utf-8')).hexdigest(), 16)
-    
-    # Base valuation multipliers based on weapon category
-    base_mult = 1.0
     gun_upper = gun_name.upper()
-    if any(k in gun_upper for k in ["KARAMBIT", "BALISONG", "REMIX", "KUKRI", "TAC"]):
-        base_mult = 3.5  # Knife multiplier
-    elif any(k in gun_upper for k in ["AK-47", "M4", "DEAGLE", "TRG"]):
-        base_mult = 2.0  # High tier weapons
-    elif any(k in gun_upper for k in ["SPECIALIST", "OPERATIVE", "TACTICIAN"]):
-        base_mult = 3.0  # Gloves multiplier
-        
-    skin_tier_factor = (hash_val % 50) + 10  # 10 to 60 base value units
+    is_knife_or_glove = any(k in gun_upper for k in ["KARAMBIT", "BALISONG", "REMIX", "KUKRI", "TAC", "WRENCH", "SWORD", "SPECIALIST", "OPERATIVE", "TACTICIAN"])
     
-    min_price  = int((skin_tier_factor * 15 * base_mult))
-    max_price  = int((min_price * 2.8))
-    fair_value = int((min_price + max_price) / 2)
-    target_buy = int(min_price * 1.15)
-    target_sell = int(max_price * 0.90)
-    profit_margin = target_sell - target_buy
+    if is_knife_or_glove:
+        min_price   = custom_target_price if custom_target_price else 250
+        max_price   = int(min_price * 3.5)
+        fair_value  = int((min_price + max_price) / 2)
+        target_buy  = int(min_price * 1.1)
+        target_sell = int(max_price * 0.85)
+    else:
+        # Firearms skins (Carmine, Sandstorm, Arctic, etc. are Tier 1-3 skins costing 15-40 credits)
+        min_price   = custom_target_price if custom_target_price else 15
+        max_price   = 75
+        fair_value  = 35
+        target_buy  = max(15, int(min_price * 1.2))
+        target_sell = 65
+
+    profit_margin = max(5, target_sell - target_buy)
 
     return {
         "gun_name":      gun_name,

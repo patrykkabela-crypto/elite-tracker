@@ -317,9 +317,15 @@ class HackusateView(discord.ui.View):
 class CustomSkinModal(discord.ui.Modal, title="Custom Critical Ops Skin Input"):
     skin_name_input = discord.ui.TextInput(
         label="Exact C-Ops Skin Name",
-        placeholder="Type any Tier 1-7 skin name (e.g., Valkyrie, Glitch, Dragon...)",
+        placeholder="Type skin name (e.g., Carmine, Valkyrie, Glitch...)",
         required=True,
         max_length=50
+    )
+    custom_price_input = discord.ui.TextInput(
+        label="Target Buy Price in Credits (Optional)",
+        placeholder="e.g. 15 (leave blank for auto C-Ops floor valuation)",
+        required=False,
+        max_length=10
     )
 
     def __init__(self, category: str, gun_name: str):
@@ -329,7 +335,11 @@ class CustomSkinModal(discord.ui.Modal, title="Custom Critical Ops Skin Input"):
 
     async def on_submit(self, interaction: discord.Interaction):
         skin_name = self.skin_name_input.value.strip()
-        val = calculate_skin_market_valuation(self.gun_name, skin_name)
+        custom_price = None
+        if self.custom_price_input.value and self.custom_price_input.value.strip().isdigit():
+            custom_price = int(self.custom_price_input.value.strip())
+
+        val = calculate_skin_market_valuation(self.gun_name, skin_name, custom_target_price=custom_price)
         
         db.add_marketplace_subscription(
             user_id=interaction.user.id,
@@ -354,7 +364,6 @@ class CustomSkinModal(discord.ui.Modal, title="Custom Critical Ops Skin Input"):
             f"Live DM notifications enabled for Sell Offers & Buy Requests."
         )
 
-        # Send private DM to sniper
         try:
             user = interaction.user
             await user.send(clean_msg)
@@ -377,7 +386,7 @@ class SkinSelectView(discord.ui.View):
         self.gun_name = gun_name
         self.add_item(SkinSelectDropdown(category, gun_name, options_list))
 
-    @discord.ui.button(label="✍️ Type Custom Skin Name", style=discord.ButtonStyle.secondary, custom_id="custom_skin_btn")
+    @discord.ui.button(label="✍️ Type Custom Skin & Target Price", style=discord.ButtonStyle.secondary, custom_id="custom_skin_btn")
     async def custom_skin_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(CustomSkinModal(self.category, self.gun_name))
 
@@ -464,7 +473,7 @@ class GunSelectDropdown(discord.ui.Select):
             title=f"Select Skin for {gun_name}",
             description=(
                 f"Choose which **{gun_name}** skin you want to snipe on C-Ops Marketplace,\n"
-                f"or click **✍️ Type Custom Skin Name** to type any specific C-Ops Tier 1-7 skin name:"
+                f"or click **✍️ Type Custom Skin & Target Price** to set a custom target price:"
             ),
             color=discord.Color.blue()
         )
@@ -772,7 +781,7 @@ async def cmd_marketplaceselectskin(interaction: discord.Interaction):
         title="Critical Ops Marketplace Skin Snipe",
         description=(
             "Select the weapon category below to pick a skin or type any specific C-Ops skin name.\n"
-            "Our AI system will generate custom Minimum Floor Prices, Maximum Resale Ceilings, and Arbitrage Targets sent directly to your private DMs!"
+            "Our AI system will generate custom Minimum Floor Prices (15 Credits for firearms), Maximum Resale Ceilings, and Arbitrage Targets sent directly to your private DMs!"
         ),
         color=discord.Color.gold()
     )
