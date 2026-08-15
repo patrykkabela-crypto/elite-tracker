@@ -1,15 +1,42 @@
 import aiohttp
 import asyncio
+import re
 from typing import Dict, Any, Optional, List
+
+def format_player_ign(raw_name: str, tag: Optional[str] = None) -> str:
+    """
+    Prevents double clan tags (e.g., '[URGH] [URGH] MiesterZ' -> '[URGH] MiesterZ').
+    """
+    if not raw_name:
+        return "Unknown"
+    
+    clean_name = raw_name.strip()
+    
+    # Remove any existing bracketed tag if it matches tag or pattern
+    if tag:
+        tag_pattern = f"[{tag}]"
+        while clean_name.startswith(tag_pattern):
+            clean_name = clean_name[len(tag_pattern):].strip()
+            
+    # Strip any leading bracketed tag if tag wasn't explicitly provided but name has it
+    match = re.match(r'^\[([^\]]+)\]\s*(.+)$', clean_name)
+    if match:
+        extracted_tag = match.group(1)
+        extracted_name = match.group(2).strip()
+        # If tag wasn't passed, use extracted tag
+        if not tag:
+            tag = extracted_tag
+        clean_name = extracted_name
+
+    if tag:
+        return f"[{tag}] {clean_name}"
+    return clean_name
+
 
 class CriticalOpsAPI:
     """
-    Critical Ops Game API Client.
-
-    Endpoint truth table (verified live):
-    - /leaderboard/elite  → top 29 Elite Ops players WITH real rating  ✅
-    - /leaderboard/ranked → top 100 by KILLS (no MMR/rating field)     ❌ NOT MMR
-    - /player/{ign}       → full profile WITH real mmr                 ✅
+    Critical Ops Game API Client with multi-rank support, live marketplace integration,
+    and profile tracking.
     """
     def __init__(self):
         self.base_url = "https://cops.melodia.cloud/api"
@@ -30,8 +57,12 @@ class CriticalOpsAPI:
     # ==================== PLAYER PROFILE ====================
 
     async def get_player_by_ign(self, ign: str) -> Optional[Dict[str, Any]]:
+        # Strip brackets if user passed [TAG] IGN
         ign_clean = ign.strip()
-        session   = await self.get_session()
+        if ign_clean.startswith("[") and "]" in ign_clean:
+            ign_clean = ign_clean.split("]", 1)[1].strip()
+
+        session = await self.get_session()
         try:
             async with session.get(f"{self.base_url}/player/{ign_clean}", timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status != 200:
@@ -42,9 +73,10 @@ class CriticalOpsAPI:
                     return None
 
                 user_id   = summary.get("userId", "")
-                name      = summary.get("name", ign_clean)
+                raw_name  = summary.get("name", ign_clean)
                 level     = summary.get("level", 0)
                 mmr       = summary.get("mmr", 0)
+                banned    = summary.get("banned", False)
 
                 rank_info = summary.get("rank", {})
                 rank_name = rank_info.get("name", "Unranked") if isinstance(rank_info, dict) else "Unranked"
@@ -54,12 +86,23 @@ class CriticalOpsAPI:
 
                 lb_pos    = summary.get("leaderboardPosition")
 
-                career = summary.get("career", {}).get("ranked", {})
-                kills  = career.get("k", 0)
-                deaths = career.get("d", 0)
-                kd     = round(kills / max(1, deaths), 2)
+                clan_info = summary.get("clan", {}) or {}
+                clan_tag  = clan_info.get("tag", "") if isinstance(clan_info, dict) else ""
 
-                seasons     = summary.get("seasons", [])
+                formatted_ign = format_player_ign(raw_name, clan_tag)
+
+                # Career & Season K/D Tracking
+                career = summary.get("career", {}).get("ranked", {})
+                career_kills  = career.get("k", 0)
+                career_deaths = career.get("d", 0)
+
+                seasons = summary.get("seasons", [])
+                latest_season = seasons[-1].get("ranked", {}) if seasons else {}
+                season_kills  = latest_season.get("k", career_kills)
+                season_deaths = latest_season.get("d", career_deaths)
+
+                kd = round(career_kills / max(1, career_deaths), 2)
+
                 mmr_history = [mmr] + [
                     s["ranked"]["mmr"]
                     for s in seasons
@@ -72,14 +115,12 @@ class CriticalOpsAPI:
                     [s.get("season", 17) for s in seasons if s.get("ranked", {}).get("games", 0) > 0],
                     default=17
                 )
-                creation_year    = max(2017, 2026 - (17 - earliest))
+                creation_year     = max(2017, 2026 - (17 - earliest))
                 account_age_years = 2026 - creation_year
 
-                clan_info = summary.get("clan", {}) or {}
-                clan_tag  = clan_info.get("tag", "") if isinstance(clan_info, dict) else ""
-
                 return {
-                    "ign":               name,
+                    "ign":               formatted_ign,
+                    "ign_raw":           raw_name,
                     "id":                f"COP-{user_id}",
                     "level":             level,
                     "account_age_str":   f"{account_age_years} years ({creation_year})",
@@ -88,70 +129,68 @@ class CriticalOpsAPI:
                     "lowest_rating":     lowest_rating,
                     "rank":              rank_name,
                     "rank_position":     lb_pos,
-                    "kills":             kills,
-                    "deaths":            deaths,
+                    "kills":             career_kills,
+                    "deaths":            career_deaths,
+                    "season_kills":      season_kills,
+                    "season_deaths":     season_deaths,
                     "kd_ratio":          kd,
                     "clan_tag":          clan_tag,
+                    "banned":            banned,
                 }
         except Exception as e:
             print(f"[COPS API ERROR] /player/{ign_clean} failed: {e}")
             return None
 
-    # ==================== ELITE OPS LEADERBOARD (REAL MMR) ====================
+    # ==================== LEADERBOARD (ELITE & SPEC OPS) ====================
 
     async def get_elite_leaderboard(self) -> List[Dict[str, Any]]:
         """
-        Fetch Elite Ops leaderboard — the ONLY endpoint with real MMR.
-        Returns top ~29 players with: rank, name, tag, rating.
+        Fetch leaderboard with clean IGN formatting (no double clan tags).
+        Includes Spec Ops and Elite Ops players.
         """
         session = await self.get_session()
         players = []
         try:
-            async with session.get(f"{self.base_url}/leaderboard/elite", timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            async with session.get(f"{self.base_url}/leaderboard/elite?limit=100", timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status != 200:
                     return []
                 data    = await resp.json()
                 entries = data.get("entries", [])
                 for item in entries:
-                    name   = item.get("name", "")
-                    rating = item.get("rating", 0)
-                    rank   = item.get("rank")
-                    tag    = item.get("tag", "")
-                    if name and rating:
+                    raw_name = item.get("name", "")
+                    rating   = item.get("rating", 0)
+                    rank_pos = item.get("rank")
+                    tag      = item.get("tag", "")
+                    
+                    if raw_name and rating:
+                        formatted_ign = format_player_ign(raw_name, tag)
                         players.append({
-                            "ign":          f"[{tag}] {name}" if tag else name,
-                            "ign_raw":      name,
-                            "tag":          tag or "",
-                            "rank":         "Elite Ops",
-                            "rank_position": rank,
-                            "rating":       rating,
+                            "ign":           formatted_ign,
+                            "ign_raw":       raw_name,
+                            "tag":           tag or "",
+                            "rank":          "Elite Ops" if rating >= 2000 else "Spec Ops",
+                            "rank_position": rank_pos,
+                            "rating":        rating,
                         })
         except Exception as e:
             print(f"[COPS API ERROR] /leaderboard/elite failed: {e}")
         return players
 
-    # ==================== SPEC OPS LEADERBOARD (FOR /leaderboard COMMAND) ====================
+    # ==================== LIVE MARKETPLACE FEED ====================
 
-    async def get_spec_ops_leaderboard(self) -> List[Dict[str, Any]]:
+    async def get_marketplace_feed(self) -> List[Dict[str, Any]]:
         """
-        Build the best possible 1800+ MMR leaderboard:
-        - Real ratings from /leaderboard/elite (Elite Ops, 2000+ MMR)
-        - For Spec Ops tier (1800-1999): we enrich elite endpoint players individually
-          via /player/{ign} if needed, and include any additional known Spec Ops players.
-        
-        Note: There is NO ranked MMR leaderboard endpoint for Spec Ops tier.
-        The /leaderboard/ranked endpoint ranks by total kills, not MMR.
+        Fetch live marketplace activity (Buy requests and Sell requests).
         """
-        # Get Elite Ops players (real MMR)
-        elite_players = await self.get_elite_leaderboard()
-        return elite_players
-
-    # ==================== INDIVIDUAL PLAYER RATING LOOKUP (FOR TRACKING) ====================
-
-    async def get_player_rating(self, ign: str) -> Optional[int]:
-        """Fast MMR lookup for a single player (used by live tracker)."""
-        player = await self.get_player_by_ign(ign)
-        return player["rating"] if player else None
+        session = await self.get_session()
+        try:
+            async with session.get(f"{self.base_url}/feed", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("events", [])
+        except Exception:
+            pass
+        return []
 
 
 cops_api_client = CriticalOpsAPI()

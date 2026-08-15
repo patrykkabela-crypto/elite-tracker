@@ -5,7 +5,216 @@ import asyncio
 import config
 from cops_api import cops_api_client
 from cops_tracker import snipe_tracker, leaderboard_tracker
+from database import db
 
+# ==================== SKIN CATALOG DATA ====================
+
+SKIN_CATALOG = {
+    "Knives": {
+        "Kukri": ["Dragonfly", "Golden Feather", "Damascus", "Crimson Tide", "Obsidian"],
+        "Remix": ["Hyperion", "Glitch", "Cyberpunk", "Solar Flare", "Neon Wave"],
+        "Karambit": ["Crimson Web", "Fade", "Lore", "Doppler", "Tiger Tooth"],
+        "Balisong": ["Asimov", "Spectrum", "Marble Fade", "Case Hardened", "Nightfall"],
+        "Tac-Knife": ["Urban Masked", "Scorched", "Safari Mesh", "Rust Coat", "Blaze"]
+    },
+    "Gloves": {
+        "Operative": ["Blackout", "Venom", "Cobalt", "Inferno", "Viper"],
+        "Specialist": ["Emerald", "Crimson", "Snow Camo", "Gold Touch", "Stealth"],
+        "Tactician": ["Desert Storm", "Digital Camo", "Ghost", "Apex", "Overdrive"]
+    },
+    "Pistols": {
+        "P250": ["Asimov", "Sand Dune", "Cyber", "Supernova", "Pulse"],
+        "GSR 1911": ["Classic Chrome", "Royal", "Vintage", "Dragon", "Golden Age"],
+        "MR96": ["Python", "Wild West", "Black Gold", "Magnum Force", "Redline"],
+        "Deagle": ["Blaze", "Golden Dragon", "Printstream", "Mecha", "Code Red"]
+    },
+    "SMGs": {
+        "MP5": ["Sub Zero", "Neon Rider", "Chrono", "Reactor", "Acid Melt"],
+        "MP7": ["Armor Core", "Impulse", "Special Ops", "Velocity", "Tsunami"],
+        "P90": ["Asimov", "Grim", "Cold War", "Death Adder", "Vortex"],
+        "Vector": ["Hyper Beast", "Speed Demon", "Cyberpunk", "Electric", "Phantom"]
+    },
+    "Rifles": {
+        "AK-47": ["Dragon", "Fire Serpent", "Valkyrie", "Redline", "Asimov", "Golden Age"],
+        "M4": ["Howl", "Hyperion", "Cyberpunk", "Mecha", "Printstream", "Poseidon"],
+        "HK417": ["Sniper Core", "Spectre", "Overwatch", "Titan", "Shadow"],
+        "SA58": ["Warfare", "Commando", "Ironclad", "Tactical", "Apex"]
+    },
+    "Shotguns": {
+        "FP6": ["Bulldozer", "Carnage", "Thunder", "Inferno", "Heavy Hitter"],
+        "Super 90": ["Enforcer", "Riot", "Vulkan", "Overkill", "Titanium"]
+    },
+    "Snipers": {
+        "TRG-22": ["Dragon Lore", "Hyperion", "Gungnir", "Asimov", "Frostbite"],
+        "M14": ["Marksman", "Hunter", "Stalker", "Ghost", "Precision"],
+        "URAT": ["Reaper", "Void", "Oblivion", "Eclipse", "Supernova"]
+    }
+}
+
+AI_VALUATIONS = {
+    "Dragon Lore": "💎 **AI Valuation: EXTREMELY RARE / HIGH PROFIT POTENTIAL! (WORTH TO BUY)**",
+    "Howl": "🔥 **AI Valuation: LEGENDARY SKIN! High resale demand (WORTH TO BUY)**",
+    "Asimov": "⚡ **AI Valuation: POPULAR METAGAME SKIN! Best offer pricing (WORTH TO BUY)**",
+    "Fade": "🌈 **AI Valuation: HIGH TIER COLLECTOR ITEM! Great buy request candidate.**",
+    "Crimson Web": "🩸 **AI Valuation: TOP TIER ITEM! Highly liquid on Marketplace.**"
+}
+
+def get_ai_recommendation(skin_name: str) -> str:
+    for key, val in AI_VALUATIONS.items():
+        if key.lower() in skin_name.lower():
+            return val
+    return "✅ **AI Valuation: RECOMMENDED MARKET ITEM (Good Liquidity & Fair Value)**"
+
+# ==================== HACKUSATE BUTTON VIEW ====================
+
+class HackusateView(discord.ui.View):
+    def __init__(self, target_ign: str, user_id: int, user_name: str):
+        super().__init__(timeout=800)
+        self.target_ign = target_ign
+        self.user_id = user_id
+        self.user_name = user_name
+
+    @discord.ui.button(label="🚨 Hackusate Player", style=discord.ButtonStyle.danger, custom_id="hackusate_btn")
+    async def hackusate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        count = db.hackusate_player(
+            ign=self.target_ign,
+            reported_by=self.user_id,
+            reporter_name=self.user_name
+        )
+        
+        embed = discord.Embed(
+            title="🚨 Hackusation Registered!",
+            description=(
+                f"Player **{self.target_ign}** has been added to the **Hacker Watchlist** (`/hackerlist`)!\n"
+                f"Total Hackusations: **{count}**\n\n"
+                f"Reported by: <@{self.user_id}>\n"
+                f"Status: `Under Investigation`"
+            ),
+            color=discord.Color.red()
+        )
+        embed.set_footer(text="made by pown • C-Ops Anti-Cheat Watch")
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(embed=embed, ephemeral=False)
+
+# ==================== MARKETPLACE SELECT SKIN VIEWS ====================
+
+class SkinSelectDropdown(discord.ui.Select):
+    def __init__(self, category: str, gun_name: str, options_list: list):
+        self.category = category
+        self.gun_name = gun_name
+        select_options = [
+            discord.SelectOption(label=skin, description=f"{gun_name} skin for market sniping")
+            for skin in options_list[:25]
+        ]
+        super().__init__(
+            placeholder=f"Select a skin for {gun_name}...",
+            min_values=1,
+            max_values=1,
+            options=select_options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        skin_name = self.values[0]
+        ai_advice = get_ai_recommendation(skin_name)
+        
+        # Save subscription to DB
+        db.add_marketplace_subscription(
+            user_id=interaction.user.id,
+            category=self.category,
+            gun_name=self.gun_name,
+            skin_name=skin_name,
+            track_type="both"
+        )
+
+        embed = discord.Embed(
+            title=f"Marketplace Snipe Activated: {self.gun_name} | {skin_name}",
+            description=(
+                f"Now tracking **{self.gun_name} — {skin_name}** live on Critical Ops Marketplace!\n\n"
+                f"{ai_advice}\n\n"
+                f"🔔 **Live Notifications Enabled for:**\n"
+                f"• **Sell Requests**: Player X is Selling `{skin_name}` for X credits best offer\n"
+                f"• **Buy Requests**: Player X bought requested `{skin_name}` for X credits best offer"
+            ),
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text="made by pown • Live C-Ops Marketplace AI Notifier")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class GunSelectDropdown(discord.ui.Select):
+    def __init__(self, category: str, guns_dict: dict):
+        self.category = category
+        self.guns_dict = guns_dict
+        select_options = [
+            discord.SelectOption(label=gun, description=f"Select {gun} models and skins")
+            for gun in guns_dict.keys()
+        ]
+        super().__init__(
+            placeholder=f"Select a {category[:-1]} model...",
+            min_values=1,
+            max_values=1,
+            options=select_options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        gun_name = self.values[0]
+        skins = self.guns_dict.get(gun_name, [])
+        
+        view = discord.ui.View()
+        view.add_item(SkinSelectDropdown(self.category, gun_name, skins))
+        
+        embed = discord.Embed(
+            title=f"Select Skin for {gun_name}",
+            description=f"Choose which **{gun_name}** skin you want to snipe on the C-Ops Marketplace:",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class CategorySelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=600)
+
+    @discord.ui.button(label="🔪 Knives", style=discord.ButtonStyle.primary, custom_id="cat_knives")
+    async def knives_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_guns(interaction, "Knives")
+
+    @discord.ui.button(label="🧤 Gloves", style=discord.ButtonStyle.primary, custom_id="cat_gloves")
+    async def gloves_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_guns(interaction, "Gloves")
+
+    @discord.ui.button(label="🔫 Pistols", style=discord.ButtonStyle.primary, custom_id="cat_pistols")
+    async def pistols_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_guns(interaction, "Pistols")
+
+    @discord.ui.button(label="💥 SMGs", style=discord.ButtonStyle.primary, custom_id="cat_smgs")
+    async def smgs_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_guns(interaction, "SMGs")
+
+    @discord.ui.button(label="🎯 Rifles", style=discord.ButtonStyle.success, custom_id="cat_rifles")
+    async def rifles_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_guns(interaction, "Rifles")
+
+    @discord.ui.button(label="🌾 Shotguns", style=discord.ButtonStyle.secondary, custom_id="cat_shotguns")
+    async def shotguns_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_guns(interaction, "Shotguns")
+
+    @discord.ui.button(label="🔭 Snipers", style=discord.ButtonStyle.danger, custom_id="cat_snipers")
+    async def snipers_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_guns(interaction, "Snipers")
+
+    async def _show_guns(self, interaction: discord.Interaction, category: str):
+        guns = SKIN_CATALOG.get(category, {})
+        view = discord.ui.View()
+        view.add_item(GunSelectDropdown(category, guns))
+        
+        embed = discord.Embed(
+            title=f"Marketplace Selection — {category}",
+            description=f"Click the dropdown below to select the **{category}** gun model:",
+            color=discord.Color.purple()
+        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 # ==================== PAGINATION VIEW ====================
 
@@ -35,7 +244,7 @@ class LeaderboardPaginationView(discord.ui.View):
             rating  = p.get("rating", 0)
             rank    = p.get("rank", "Unknown")
             ign     = p.get("ign", "?")
-            lines.append(f"**{pos_str}** {p['ign']} — **{p['rating']:,}** Rating")
+            lines.append(f"**{pos_str}** {ign} — **{rating:,}** Rating ({rank})")
 
         embed = discord.Embed(
             title="CRITICAL OPS LEADERBOARD",
@@ -43,7 +252,7 @@ class LeaderboardPaginationView(discord.ui.View):
             color=discord.Color.gold()
         )
         embed.set_footer(
-            text=f"Page {self.current_page}/{self.total_pages} — {len(self.players)} Elite Ops players • made by pown"
+            text=f"Page {self.current_page}/{self.total_pages} — {len(self.players)} Spec Ops+ Players • made by pown"
         )
         return embed
 
@@ -73,8 +282,7 @@ class LeaderboardPaginationView(discord.ui.View):
         self._update_buttons()
         await interaction.response.edit_message(embed=self.get_page_embed(), view=self)
 
-
-# ==================== BOT ====================
+# ==================== BOT CLASS ====================
 
 class CriticalOpsBot(commands.Bot):
     def __init__(self):
@@ -83,7 +291,6 @@ class CriticalOpsBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # Register commands globally (takes ~1h to propagate)
         await self.tree.sync()
         print(f"[BOT] Global slash command sync complete.")
 
@@ -94,10 +301,9 @@ class CriticalOpsBot(commands.Bot):
         print(f"==========================================")
 
         await self.change_presence(
-            activity=discord.Game(name="Critical Ops | /search /snipe /unsnipe /leaderboard")
+            activity=discord.Game(name="Critical Ops | /snipe /marketplaceselectskin /hackerlist")
         )
 
-        # Instantly sync to the guild where the leaderboard channel lives
         try:
             channel = self.get_channel(config.LEADERBOARD_CHANNEL_ID)
             if channel and hasattr(channel, "guild"):
@@ -113,26 +319,24 @@ class CriticalOpsBot(commands.Bot):
             channel = self.get_channel(config.LEADERBOARD_CHANNEL_ID)
             if channel:
                 embed = discord.Embed(
-                    title="SPEC OPS+ LEADERBOARD TRACKER ONLINE",
+                    title="SPEC OPS+ LEADERBOARD & MARKETPLACE TRACKER ONLINE",
                     description=(
-                        "Bot has connected to Critical Ops live database.\n"
-                        "Actively monitoring Spec Ops+ & Elite Ops player rank changes every 15 seconds..."
+                        "Bot connected to Critical Ops live API & Railway DB.\n"
+                        "Actively monitoring Spec Ops+ rank changes, Marketplace transactions, & Snipe DMs..."
                     ),
                     color=discord.Color.blue()
                 )
-                embed.set_footer(text="made by pown • Auto Leaderboard Tracking")
+                embed.set_footer(text="made by pown • Auto Tracker System")
                 await channel.send(embed=embed)
         except Exception as e:
             print(f"[ON_READY WARNING] Startup message failed: {e}")
 
-        # Start the background tracking loop
         if not background_tracking_loop.is_running():
             background_tracking_loop.start()
-            print(f"[BOT] Background tracking loop started (interval: {config.SNIPE_CHECK_INTERVAL}s)")
+            print(f"[BOT] Background tracking loop started.")
 
 
 bot = CriticalOpsBot()
-
 
 # ==================== SLASH COMMANDS ====================
 
@@ -145,9 +349,10 @@ async def cmd_search(interaction: discord.Interaction, ign: str):
         await interaction.followup.send(f"Player **{ign}** not found in Critical Ops database.", ephemeral=True)
         return
 
+    banned_str = " | 🚫 **BANNED**" if player.get("banned") else ""
     embed = discord.Embed(
-        title=f"Critical Ops Player Profile: {player['ign']}",
-        color=discord.Color.blue()
+        title=f"Critical Ops Player Profile: {player['ign']}{banned_str}",
+        color=discord.Color.red() if player.get("banned") else discord.Color.blue()
     )
     embed.add_field(name="IGN",              value=f"`{player['ign']}`",                              inline=True)
     embed.add_field(name="Account ID",       value=f"`{player['id']}`",                              inline=True)
@@ -156,11 +361,11 @@ async def cmd_search(interaction: discord.Interaction, ign: str):
     embed.add_field(name="Peak / Lowest",    value=f"Peak: **{player['peak_rating']:,}** | Lowest: **{player['lowest_rating']:,}**", inline=False)
     embed.add_field(name="Account Age",      value=player['account_age_str'],                        inline=True)
     embed.add_field(name="Level",            value=f"Level **{player['level']}**",                   inline=True)
-    embed.set_footer(text="made by powm")
+    embed.set_footer(text="made by pown")
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="snipe", description="Snipe and track a player's ranked match status")
+@bot.tree.command(name="snipe", description="Snipe and track a player's ranked match status (DM Alerts Only)")
 @app_commands.describe(ign="Player IGN to snipe")
 async def cmd_snipe(interaction: discord.Interaction, ign: str):
     await interaction.response.defer()
@@ -171,14 +376,20 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
         display_name = player["ign"]
         rank_str     = player.get("rank", "Unknown")
         rating_str   = f"{player.get('rating', 0):,}"
-        clan_tag     = player.get("clan_tag", "")
-        profile_line = f"**{rank_str}** — {rating_str} MMR"
-        if clan_tag:
-            profile_line += f" | Clan: **[{clan_tag}]**"
+        lb_pos       = player.get("rank_position")
+        pos_str      = f" | Rank: **#{lb_pos}**" if lb_pos else ""
+        
+        if player.get("banned"):
+            await interaction.followup.send(
+                f"🚫 Player **{display_name}** has been BANNED by Critical Ops. You don't need to snipe them!",
+                ephemeral=True
+            )
+            return
+
+        profile_line = f"**{rank_str}** — {rating_str} MMR{pos_str}\nKills: **{player['kills']:,}** | Deaths: **{player['deaths']:,}**"
     else:
         display_name = ign
-        profile_line = "Player not found in database — will still track MMR changes."
-
+        profile_line = "Player not found in database — will still track rating changes."
 
     added = snipe_tracker.add_target(user_id, display_name)
     if not added:
@@ -189,18 +400,18 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
         return
 
     embed = discord.Embed(
-        title="Player Snipe Activated",
+        title="Player Snipe Activated 🎯",
         description=(
             f"Now actively sniping **{display_name}**\n"
             f"{profile_line}\n\n"
-            f"You will receive automated alerts when their MMR changes (ranked game finished).\n"
-            f"*Note: C-Ops API does not expose real-time online/in-game status.*"
+            f"📩 **Notifications will be sent to your DMs ONLY.**\n"
+            f"Click the button below to add them to the Hacker Watchlist."
         ),
         color=discord.Color.dark_purple()
     )
-    embed.set_footer(text="made by pown")
-    await interaction.followup.send(embed=embed)
-
+    embed.set_footer(text="made by pown • Direct Message Alerts")
+    view = HackusateView(target_ign=display_name, user_id=user_id, user_name=interaction.user.name)
+    await interaction.followup.send(embed=embed, view=view)
 
 
 @bot.tree.command(name="unsnipe", description="Stop sniping a player")
@@ -229,14 +440,55 @@ async def cmd_unsnipe(interaction: discord.Interaction, ign: str):
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="leaderboard", description="Show Critical Ops Elite Ops Leaderboard (real MMR) with page buttons")
+@bot.tree.command(name="marketplaceselectskin", description="Select skin to snipe on Critical Ops Marketplace with AI Valuation")
+async def cmd_marketplaceselectskin(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="Critical Ops Marketplace Skin Snipe 🛒",
+        description=(
+            "Select the weapon category below to pick the skin you want to snipe.\n"
+            "Our AI system will analyze item valuation, best offers, buy requests, and sell requests live from C-Ops Marketplace!"
+        ),
+        color=discord.Color.gold()
+    )
+    embed.set_footer(text="made by pown • Live C-Ops Marketplace AI Notifier")
+    view = CategorySelectView()
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+@bot.tree.command(name="hackerlist", description="View the Critical Ops Hacker Watchlist & Banned Players")
+async def cmd_hackerlist(interaction: discord.Interaction):
+    await interaction.response.defer()
+    entries = db.get_hacker_list()
+    
+    if not entries:
+        await interaction.followup.send("No players currently reported in the Hacker List.", ephemeral=True)
+        return
+
+    lines = []
+    for e in entries[:20]:
+        banned_tag = " [BANNED]" if e["is_banned"] else ""
+        lines.append(
+            f"• **{e['ign']}**{banned_tag} — **{e['hackusations']}** report(s)\n"
+            f"  Status: `{e['status']}` | Reported by: `{e['reporter']}`"
+        )
+
+    embed = discord.Embed(
+        title="🚨 CRITICAL OPS HACKER WATCHLIST",
+        description="\n".join(lines),
+        color=discord.Color.dark_red()
+    )
+    embed.set_footer(text="made by pown • Anti-Cheat Watchlist")
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="leaderboard", description="Show Critical Ops Spec Ops & Elite Ops Leaderboard")
 async def cmd_leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
 
     players = await cops_api_client.get_elite_leaderboard()
     if not players:
         await interaction.followup.send(
-            "Could not retrieve Critical Ops Elite Ops Leaderboard. API may be down.",
+            "Could not retrieve Critical Ops Leaderboard. API may be down.",
             ephemeral=True
         )
         return
@@ -248,38 +500,24 @@ async def cmd_leaderboard(interaction: discord.Interaction):
 
 # ==================== BACKGROUND TRACKING LOOP ====================
 
-@tasks.loop(seconds=15)
+@tasks.loop(seconds=10)
 async def background_tracking_loop():
     try:
         channel = bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
 
-        # ---- Snipe Alerts ----
+        # ---- Snipe Alerts (DMs ONLY) ----
         snipe_alerts = await snipe_tracker.check_snipes(bot)
         for alert in snipe_alerts:
-            print(f"[SNIPE ALERT] {alert['ign']} — sending to user {alert['user_id']}")
-
-            # Try DM first
-            dm_sent = False
+            print(f"[SNIPE ALERT] {alert['ign']} — sending DM to user {alert['user_id']}")
             try:
                 user = bot.get_user(alert["user_id"]) or await bot.fetch_user(alert["user_id"])
                 if user:
                     await user.send(alert["message"])
-                    dm_sent = True
-                    print(f"[SNIPE DM] Sent DM to {user.name}")
+                    print(f"[SNIPE DM SUCCESS] Sent DM to {user.name}")
             except Exception as e:
-                print(f"[SNIPE DM ERROR] DM failed for {alert['user_id']}: {e}")
+                print(f"[SNIPE DM ERROR] Failed DM for user {alert['user_id']}: {e}")
 
-            # Always post to tracker channel too (so it's never lost)
-            if channel:
-                embed = discord.Embed(
-                    title="Snipe Alert",
-                    description=f"<@{alert['user_id']}> {alert['message']}",
-                    color=discord.Color.orange()
-                )
-                embed.set_footer(text="made by pown • Snipe Tracker")
-                await channel.send(embed=embed)
-
-        # ---- Leaderboard Updates ----
+        # ---- Auto Leaderboard Updates ----
         leaderboard_updates = await leaderboard_tracker.check_updates()
         if leaderboard_updates:
             if channel:
@@ -291,14 +529,11 @@ async def background_tracking_loop():
                 embed.set_footer(text="made by pown • Auto Leaderboard Tracking")
                 await channel.send(embed=embed)
                 print(f"[TRACKER] Posted {len(leaderboard_updates)} update(s) to channel.")
-            else:
-                print(f"[TRACKER WARNING] Channel {config.LEADERBOARD_CHANNEL_ID} not found in cache!")
 
     except Exception as e:
         import traceback
         print(f"[BACKGROUND LOOP ERROR] {e}")
         traceback.print_exc()
-
 
 
 @background_tracking_loop.before_loop

@@ -34,8 +34,8 @@ else:
 class DatabaseManager:
     """
     Fail-Safe Multi-Storage Database Manager:
-    Uses PostgreSQL if available, local SQLite, AND a persistent JSON backup file
-    so snipe targets NEVER disappear across restarts or redeployments.
+    Supports PostgreSQL (Railway) & Local SQLite + JSON Backup.
+    Handles snipe targets, leaderboard snapshots, hacker watchlist, and marketplace tracking.
     """
     def __init__(self, sqlite_path: str = "bot_data.db"):
         self.sqlite_path = sqlite_path
@@ -71,6 +71,7 @@ class DatabaseManager:
                             kills INT DEFAULT 0,
                             deaths INT DEFAULT 0,
                             last_rating INT DEFAULT NULL,
+                            last_position INT DEFAULT NULL,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             PRIMARY KEY (user_id, ign_lowercase)
                         );
@@ -85,6 +86,31 @@ class DatabaseManager:
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         );
                     """)
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS hacker_list (
+                            id SERIAL PRIMARY KEY,
+                            ign VARCHAR(100) UNIQUE NOT NULL,
+                            reported_by BIGINT NOT NULL,
+                            reporter_name VARCHAR(100),
+                            status VARCHAR(50) DEFAULT 'Under Investigation',
+                            reason VARCHAR(255) DEFAULT 'Hackusated during Snipe',
+                            is_banned BOOLEAN DEFAULT FALSE,
+                            hackusations INT DEFAULT 1,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS marketplace_subscriptions (
+                            id SERIAL PRIMARY KEY,
+                            user_id BIGINT NOT NULL,
+                            category VARCHAR(50) NOT NULL,
+                            gun_name VARCHAR(50) NOT NULL,
+                            skin_name VARCHAR(100) NOT NULL,
+                            track_type VARCHAR(20) DEFAULT 'both',
+                            max_price INT DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
                 else:
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS snipe_targets (
@@ -95,6 +121,7 @@ class DatabaseManager:
                             kills INTEGER DEFAULT 0,
                             deaths INTEGER DEFAULT 0,
                             last_rating INTEGER DEFAULT NULL,
+                            last_position INTEGER DEFAULT NULL,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             PRIMARY KEY (user_id, ign_lowercase)
                         );
@@ -107,6 +134,31 @@ class DatabaseManager:
                             rating INTEGER NOT NULL,
                             rank_position INTEGER DEFAULT NULL,
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS hacker_list (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ign TEXT UNIQUE NOT NULL,
+                            reported_by INTEGER NOT NULL,
+                            reporter_name TEXT,
+                            status TEXT DEFAULT 'Under Investigation',
+                            reason TEXT DEFAULT 'Hackusated during Snipe',
+                            is_banned INTEGER DEFAULT 0,
+                            hackusations INTEGER DEFAULT 1,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS marketplace_subscriptions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL,
+                            category TEXT NOT NULL,
+                            gun_name TEXT NOT NULL,
+                            skin_name TEXT NOT NULL,
+                            track_type TEXT DEFAULT 'both',
+                            max_price INTEGER DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         );
                     """)
                 conn.commit()
@@ -137,21 +189,21 @@ class DatabaseManager:
         ign_lower = ign_display.lower()
         key_str = f"{user_id}:{ign_lower}"
         
-        # Check JSON backup first
         backup_data = self._load_json_backup()
         already_exists = key_str in backup_data
 
-        # Update JSON backup
         backup_data[key_str] = {
             "user_id": user_id,
             "ign_display": ign_display,
             "ign_lowercase": ign_lower,
             "state": "idle",
-            "last_rating": None
+            "kills": 0,
+            "deaths": 0,
+            "last_rating": None,
+            "last_position": None
         }
         self._save_json_backup(backup_data)
 
-        # Update SQL DB
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -179,14 +231,12 @@ class DatabaseManager:
         ign_lower = ign_display.lower()
         key_str = f"{user_id}:{ign_lower}"
         
-        # Remove from JSON backup
         backup_data = self._load_json_backup()
         removed_json = key_str in backup_data
         if removed_json:
             del backup_data[key_str]
             self._save_json_backup(backup_data)
 
-        # Remove from SQL DB
         removed_sql = False
         try:
             with self._get_connection() as conn:
@@ -203,7 +253,7 @@ class DatabaseManager:
 
         return removed_json or removed_sql
 
-    def update_snipe_state(self, user_id: int, ign_display: str, state: str, last_rating: int):
+    def update_snipe_state(self, user_id: int, ign_display: str, state: str, last_rating: int, kills: int = 0, deaths: int = 0, last_position: Optional[int] = None):
         ign_lower = ign_display.lower()
         key_str = f"{user_id}:{ign_lower}"
         
@@ -211,6 +261,9 @@ class DatabaseManager:
         if key_str in backup_data:
             backup_data[key_str]["state"] = state
             backup_data[key_str]["last_rating"] = last_rating
+            backup_data[key_str]["kills"] = kills
+            backup_data[key_str]["deaths"] = deaths
+            backup_data[key_str]["last_position"] = last_position
             self._save_json_backup(backup_data)
 
         try:
@@ -219,17 +272,15 @@ class DatabaseManager:
                 ph = "%s" if self.use_pg else "?"
                 cursor.execute(f"""
                     UPDATE snipe_targets
-                    SET state = {ph}, last_rating = {ph}
+                    SET state = {ph}, last_rating = {ph}, kills = {ph}, deaths = {ph}, last_position = {ph}
                     WHERE user_id = {ph} AND ign_lowercase = {ph}
-                """, (state, last_rating, user_id, ign_lower))
+                """, (state, last_rating, kills, deaths, last_position, user_id, ign_lower))
                 conn.commit()
         except Exception as e:
             print(f"[DB ERROR] update_snipe_state failed: {e}")
 
     def get_all_snipe_targets(self) -> Dict[Tuple[int, str], Dict[str, Any]]:
         targets = {}
-        
-        # Load from JSON backup first
         backup_data = self._load_json_backup()
         for key_str, item in backup_data.items():
             u_id = int(item["user_id"])
@@ -238,16 +289,16 @@ class DatabaseManager:
                 "user_id": u_id,
                 "ign_display": item["ign_display"],
                 "state": item.get("state", "idle"),
-                "kills": 0,
-                "deaths": 0,
-                "last_rating": item.get("last_rating")
+                "kills": item.get("kills", 0),
+                "deaths": item.get("deaths", 0),
+                "last_rating": item.get("last_rating"),
+                "last_position": item.get("last_position")
             }
 
-        # Sync from SQL DB
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT user_id, ign_lowercase, ign_display, state, kills, deaths, last_rating FROM snipe_targets")
+                cursor.execute("SELECT user_id, ign_lowercase, ign_display, state, kills, deaths, last_rating, last_position FROM snipe_targets")
                 for row in cursor.fetchall():
                     u_id = int(row["user_id"])
                     ign_low = row["ign_lowercase"]
@@ -255,9 +306,10 @@ class DatabaseManager:
                         "user_id": u_id,
                         "ign_display": row["ign_display"],
                         "state": row["state"],
-                        "kills": row["kills"],
-                        "deaths": row["deaths"],
-                        "last_rating": row["last_rating"]
+                        "kills": row["kills"] or 0,
+                        "deaths": row["deaths"] or 0,
+                        "last_rating": row["last_rating"],
+                        "last_position": row.get("last_position")
                     }
         except Exception as e:
             print(f"[DB ERROR] get_all_snipe_targets failed: {e}")
@@ -307,5 +359,113 @@ class DatabaseManager:
         except Exception as e:
             print(f"[DB ERROR] get_leaderboard_snapshot failed: {e}")
         return snapshot
+
+    # ==================== HACKER LIST (HACKUSATE) ====================
+
+    def hackusate_player(self, ign: str, reported_by: int, reporter_name: str, is_banned: bool = False) -> int:
+        """
+        Adds a player to the hacker list or increments their hackusation count.
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                ph = "%s" if self.use_pg else "?"
+                cursor.execute(f"SELECT id, hackusations FROM hacker_list WHERE LOWER(ign) = LOWER({ph})", (ign,))
+                existing = cursor.fetchone()
+                if existing:
+                    count = existing["hackusations"] + 1
+                    b_val = 1 if is_banned else 0
+                    if self.use_pg:
+                        cursor.execute("""
+                            UPDATE hacker_list
+                            SET hackusations = %s, is_banned = %s, status = CASE WHEN %s THEN 'Banned' ELSE status END
+                            WHERE id = %s
+                        """, (count, is_banned, is_banned, existing["id"]))
+                    else:
+                        cursor.execute("""
+                            UPDATE hacker_list
+                            SET hackusations = ?, is_banned = ?, status = CASE WHEN ? THEN 'Banned' ELSE status END
+                            WHERE id = ?
+                        """, (count, b_val, b_val, existing["id"]))
+                    conn.commit()
+                    return count
+                else:
+                    b_val = 1 if is_banned else 0
+                    status = 'Banned' if is_banned else 'Under Investigation'
+                    if self.use_pg:
+                        cursor.execute("""
+                            INSERT INTO hacker_list (ign, reported_by, reporter_name, status, is_banned, hackusations)
+                            VALUES (%s, %s, %s, %s, %s, 1)
+                        """, (ign, reported_by, reporter_name, status, is_banned))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO hacker_list (ign, reported_by, reporter_name, status, is_banned, hackusations)
+                            VALUES (?, ?, ?, ?, ?, 1)
+                        """, (ign, reported_by, reporter_name, status, b_val))
+                    conn.commit()
+                    return 1
+        except Exception as e:
+            print(f"[DB ERROR] hackusate_player failed: {e}")
+            return 1
+
+    def get_hacker_list(self) -> List[Dict[str, Any]]:
+        entries = []
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ign, reporter_name, status, is_banned, hackusations, created_at FROM hacker_list ORDER BY hackusations DESC, created_at DESC")
+                for row in cursor.fetchall():
+                    entries.append({
+                        "ign": row["ign"],
+                        "reporter": row["reporter_name"],
+                        "status": row["status"],
+                        "is_banned": bool(row["is_banned"]),
+                        "hackusations": row["hackusations"],
+                        "created_at": str(row["created_at"])
+                    })
+        except Exception as e:
+            print(f"[DB ERROR] get_hacker_list failed: {e}")
+        return entries
+
+    # ==================== MARKETPLACE SUBSCRIPTIONS ====================
+
+    def add_marketplace_subscription(self, user_id: int, category: str, gun_name: str, skin_name: str, track_type: str = "both") -> bool:
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                if self.use_pg:
+                    cursor.execute("""
+                        INSERT INTO marketplace_subscriptions (user_id, category, gun_name, skin_name, track_type)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (user_id, category, gun_name, skin_name, track_type))
+                else:
+                    cursor.execute("""
+                        INSERT INTO marketplace_subscriptions (user_id, category, gun_name, skin_name, track_type)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (user_id, category, gun_name, skin_name, track_type))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"[DB ERROR] add_marketplace_subscription failed: {e}")
+            return False
+
+    def get_user_marketplace_subscriptions(self, user_id: int) -> List[Dict[str, Any]]:
+        subs = []
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                ph = "%s" if self.use_pg else "?"
+                cursor.execute(f"SELECT category, gun_name, skin_name, track_type FROM marketplace_subscriptions WHERE user_id = {ph}", (user_id,))
+                for row in cursor.fetchall():
+                    subs.append({
+                        "category": row["category"],
+                        "gun_name": row["gun_name"],
+                        "skin_name": row["skin_name"],
+                        "track_type": row["track_type"]
+                    })
+        except Exception as e:
+            print(f"[DB ERROR] get_user_marketplace_subscriptions failed: {e}")
+        return subs
+
 
 db = DatabaseManager()

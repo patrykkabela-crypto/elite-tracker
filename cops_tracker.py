@@ -10,8 +10,8 @@ import config
 
 class SnipeTracker:
     """
-    Manages active sniping targets with multi-layer persistent storage.
-    Guarantees target survival across bot redeployments and restarts.
+    Manages active sniping targets with statistics (kills, deaths, MMR, rank position).
+    Detects ranked matches and banned players instantly.
     """
     def __init__(self):
         pass
@@ -31,32 +31,76 @@ class SnipeTracker:
 
     async def check_snipes(self, bot: discord.Client) -> List[Dict[str, Any]]:
         alerts = []
-        for (user_id, key_ign), info in list(self.targets.items()):
-            player = await cops_api_client.get_player_by_ign(info["ign_display"])  # real MMR via /player/{ign}
+        all_targets = list(self.targets.items())
+        
+        for (user_id, key_ign), info in all_targets:
+            player = await cops_api_client.get_player_by_ign(info["ign_display"])
             if not player:
                 continue
 
-            ign_name     = player["ign"]
+            ign_name       = player["ign"]
             current_rating = player["rating"]
-            last_rating    = info["last_rating"]
+            current_kills  = player.get("kills", 0)
+            current_deaths = player.get("deaths", 0)
+            current_pos    = player.get("rank_position")
+            is_banned      = player.get("banned", False)
 
-            if last_rating is None:
-                db.update_snipe_state(user_id, ign_name, info["state"], current_rating)
+            # Check if player was banned!
+            if is_banned:
+                db.remove_snipe_target(user_id, ign_name)
+                # Auto-add to hacker list as banned
+                db.hackusate_player(ign_name, user_id, "System Auto-Banned Check", is_banned=True)
+                alerts.append({
+                    "type":    "banned",
+                    "user_id": user_id,
+                    "ign":     ign_name,
+                    "message": (
+                        f"🚫 **PLAYER BANNED ALERT**: Player **{ign_name}** has been BANNED by Critical Ops!\n"
+                        f"Target has been automatically removed from your snipe list. You do not need to snipe them anymore."
+                    )
+                })
                 continue
 
-            if current_rating != last_rating:
-                delta = current_rating - last_rating
-                db.update_snipe_state(user_id, ign_name, info["state"], current_rating)
+            last_rating   = info["last_rating"]
+            last_kills    = info["kills"]
+            last_deaths   = info["deaths"]
+            last_pos      = info["last_position"]
 
-                sign = "+" if delta >= 0 else ""
+            # Initialize baseline if first run
+            if last_rating is None:
+                db.update_snipe_state(user_id, ign_name, info["state"], current_rating, current_kills, current_deaths, current_pos)
+                continue
+
+            # Detect stat changes (Ranked Match Completed)
+            rating_changed = (current_rating != last_rating)
+            kills_changed  = (current_kills > last_kills)
+            deaths_changed = (current_deaths > last_deaths)
+
+            if rating_changed or kills_changed or deaths_changed:
+                delta_rating = current_rating - last_rating
+                delta_k      = current_kills - last_kills
+                delta_d      = current_deaths - last_deaths
+
+                db.update_snipe_state(user_id, ign_name, info["state"], current_rating, current_kills, current_deaths, current_pos)
+
+                sign_r = "+" if delta_rating >= 0 else ""
+                
+                # Format: [x] user #their ranking on leaderboard -> to what now they have , (+x)
+                pos_str = ""
+                if last_pos and current_pos and last_pos != current_pos:
+                    pos_str = f" #{last_pos} → #{current_pos}"
+                elif current_pos:
+                    pos_str = f" #{current_pos}"
+
+                stat_line = f"{ign_name}{pos_str} -> **{current_rating:,}** ({sign_r}{delta_rating})"
+                if delta_k > 0 or delta_d > 0:
+                    stat_line += f" | Kills: **+{delta_k}**, Deaths: **+{delta_d}**"
+
                 alerts.append({
                     "type":    "end",
                     "user_id": user_id,
                     "ign":     ign_name,
-                    "message": (
-                        f"**{ign_name}** just finished a ranked game!\n"
-                        f"Rating: **{last_rating:,} → {current_rating:,}** ({sign}{delta})"
-                    )
+                    "message": f"🎯 **SNIPE MATCH FINISHED**\n{stat_line}"
                 })
 
         return alerts
@@ -67,17 +111,14 @@ class SnipeTracker:
 class LeaderboardTracker:
     """
     Monitors Spec Ops (1800+ rating) and Elite Ops players.
-    - Only posts when a player's actual rating changes (= real game played).
-    - Persists last-sent hash to a file to survive bot restarts/redeploys without re-sending.
+    Only fires when actual rating or rank changes.
     """
     HASH_FILE = "last_tracker_hash.txt"
 
     def __init__(self):
         self.previous_snapshot: Dict[str, Dict[str, Any]] = db.get_leaderboard_snapshot()
         self.initialized = bool(self.previous_snapshot)
-        # Load the persisted hash from disk so duplicates survive restarts
         self.last_sent_hash = self._load_hash()
-        # Timestamp of last post — extra guard against burst duplicates
         self.last_sent_time: float = 0.0
 
     def _load_hash(self) -> str:
@@ -96,13 +137,12 @@ class LeaderboardTracker:
 
     async def check_updates(self) -> List[str]:
         updates: List[str] = []
-        current_players = await cops_api_client.get_elite_leaderboard()  # real MMR from /leaderboard/elite
+        current_players = await cops_api_client.get_elite_leaderboard()
         if not current_players:
             return []
 
         seen_keys: Set[str] = set()
 
-        # First run — just take a snapshot, post nothing
         if not self.initialized:
             db.save_leaderboard_snapshot(current_players)
             self.previous_snapshot = db.get_leaderboard_snapshot()
@@ -124,59 +164,49 @@ class LeaderboardTracker:
 
             if prev:
                 prev_rating = prev["rating"]
-                prev_rank   = prev["rank"]
                 prev_pos    = prev.get("pos")
 
-                # ── ONLY fire when rating actually changed (real match played) ──
                 if current_rating != prev_rating:
                     diff     = current_rating - prev_rating
                     diff_str = f"+{diff}" if diff >= 0 else str(diff)
 
-                    is_new  = (prev_rating < 1800 and current_rating >= 1800) or \
-                              (prev_rank == "Master" and current_rank == "Spec Ops")
-                    new_tag = " (new)" if is_new else ""
-
-                    # Elite Ops: show rank position movement too
-                    if current_rank == "Elite Ops" and prev_pos and current_pos and prev_pos != current_pos:
-                        line = f"{ign}: #{prev_pos} → #{current_pos}, {prev_rating} → {current_rating} ({diff_str}){new_tag}"
-                    elif current_rank == "Elite Ops" and current_pos:
-                        line = f"{ign}: #{current_pos}, {prev_rating} → {current_rating} ({diff_str}){new_tag}"
+                    pos_transition = ""
+                    if prev_pos and current_pos and prev_pos != current_pos:
+                        pos_transition = f"#{prev_pos} → #{current_pos}"
+                    elif current_pos:
+                        pos_transition = f"#{current_pos}"
                     else:
-                        line = f"{ign}: {prev_rating} → {current_rating} ({diff_str}){new_tag}"
+                        pos_transition = "#?"
 
+                    # Format: [x] user #their ranking on leaderboard -> to what now they have , (+x)
+                    line = f"• **{ign}** {pos_transition} -> **{current_rating:,} MMR** ({diff_str})"
                     updates.append(line)
 
-            # Update in-memory snapshot
             self.previous_snapshot[key] = {
-                "rank":  current_rank,
+                "rank":   current_rank,
                 "rating": current_rating,
                 "pos":    current_pos
             }
 
-        # Persist snapshot to DB
         db.save_leaderboard_snapshot(current_players)
 
         if not updates:
             return []
 
-        # ── Dedup: same content as last post? Skip. ──
         content_hash = str(hash("|".join(sorted(updates))))
         if content_hash == self.last_sent_hash:
-            print(f"[TRACKER] Duplicate batch detected — skipping.")
             return []
 
-        # ── Burst guard: don't send twice within 10 seconds ──
         now = time.time()
-        if now - self.last_sent_time < 10:
-            print(f"[TRACKER] Burst guard triggered — too soon since last post.")
+        if now - self.last_sent_time < 5:
             return []
 
         self.last_sent_hash  = content_hash
         self.last_sent_time  = now
-        self._save_hash(content_hash)    # Persist so restarts won't re-send same batch
+        self._save_hash(content_hash)
 
         return updates
 
 
-snipe_tracker     = SnipeTracker()
+snipe_tracker       = SnipeTracker()
 leaderboard_tracker = LeaderboardTracker()
