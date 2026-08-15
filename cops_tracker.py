@@ -10,18 +10,51 @@ import config
 
 class SnipeTracker:
     """
-    Manages active sniping targets with real-time mid-game score tracking,
-    season games detection (+1 game completed), and instant banned player removal.
+    Manages active sniping targets with instant baseline population,
+    anti-spam deduping, and clean match tracking.
     """
     def __init__(self):
-        pass
+        self.sent_alert_cache: Set[str] = set()
 
     @property
     def targets(self) -> Dict[Tuple[int, str], Dict[str, Any]]:
         return db.get_all_snipe_targets()
 
-    def add_target(self, user_id: int, ign: str) -> bool:
-        return db.add_snipe_target(user_id, ign)
+    async def add_target(self, user_id: int, ign: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        """
+        Adds a target and immediately populates their live baseline stats.
+        Returns (success, player_data).
+        """
+        player = await cops_api_client.get_player_by_ign(ign)
+        if not player:
+            added = db.add_snipe_target(user_id, ign)
+            return added, None
+
+        display_name   = player["ign"]
+        current_rating = player["rating"]
+        current_kills  = player.get("season_kills", player.get("career_kills", 0))
+        current_deaths = player.get("season_deaths", player.get("career_deaths", 0))
+        current_games  = player.get("season_games", player.get("career_games", 0))
+        current_pos    = player.get("rank_position")
+
+        # Save complete baseline immediately so initial check never fires fake alert
+        added = db.add_snipe_target(user_id, display_name)
+        if added:
+            db.update_snipe_state(
+                user_id=user_id,
+                ign_display=display_name,
+                state="idle",
+                last_rating=current_rating,
+                kills=current_kills,
+                deaths=current_deaths,
+                games_played=current_games,
+                last_position=current_pos,
+                mid_match=False,
+                match_start_kills=current_kills,
+                match_start_deaths=current_deaths
+            )
+
+        return added, player
 
     def remove_target(self, user_id: int, ign: str) -> bool:
         return db.remove_snipe_target(user_id, ign)
@@ -55,8 +88,8 @@ class SnipeTracker:
                     "user_id": user_id,
                     "ign":     ign_name,
                     "message": (
-                        f"🚫 **PLAYER BANNED ALERT**: Player **{ign_name}** has been BANNED by Critical Ops!\n"
-                        f"Target has been automatically removed from your snipe list. You don't need to snipe them anymore."
+                        f"PLAYER BANNED: Player **{ign_name}** has been BANNED by Critical Ops.\n"
+                        f"Target auto-removed from your snipe list."
                     )
                 })
                 continue
@@ -70,8 +103,8 @@ class SnipeTracker:
             match_start_k     = info.get("match_start_kills", current_kills)
             match_start_d     = info.get("match_start_deaths", current_deaths)
 
-            # Initialize baseline snapshot on first tracking cycle
-            if last_rating is None:
+            # Safety Guard: If baseline is uninitialized or games_played was 0, populate silently
+            if last_rating is None or last_games == 0 or match_start_k == 0:
                 db.update_snipe_state(
                     user_id=user_id,
                     ign_display=ign_name,
@@ -87,27 +120,43 @@ class SnipeTracker:
                 )
                 continue
 
-            game_count_increased = (current_games > last_games)
+            game_count_increased = (current_games > last_games and last_games > 0)
             rating_changed       = (current_rating != last_rating)
             kills_increased      = (current_kills > last_kills)
             deaths_increased     = (current_deaths > last_deaths)
 
-            # Scenario A: MATCH ENDED (Games Played +1 or Rating changed)
+            # Scenario A: RANKED MATCH FINISHED (Games Played +1 or Rating changed)
             if game_count_increased or rating_changed:
                 delta_rating = current_rating - last_rating
                 delta_k      = current_kills - match_start_k
                 delta_d      = current_deaths - match_start_d
 
+                # Sanity guard against giant baseline jump anomalies
+                if delta_k > 100 or delta_k < 0:
+                    delta_k = max(0, current_kills - last_kills)
+                if delta_d > 100 or delta_d < 0:
+                    delta_d = max(0, current_deaths - last_deaths)
+
+                # Dedup signature check
+                dedup_sig = f"{user_id}:{ign_name.lower()}:{current_games}:{current_rating}:{current_kills}"
+                if dedup_sig in self.sent_alert_cache:
+                    continue
+                self.sent_alert_cache.add(dedup_sig)
+                if len(self.sent_alert_cache) > 500:
+                    self.sent_alert_cache.clear()
+
                 sign_r = "+" if delta_rating >= 0 else ""
-                
                 pos_str = ""
                 if last_pos and current_pos and last_pos != current_pos:
-                    pos_str = f" #{last_pos} → #{current_pos}"
+                    pos_str = f" #{last_pos} -> #{current_pos}"
                 elif current_pos:
                     pos_str = f" #{current_pos}"
 
-                line_main = f"• **{ign_name}**{pos_str} -> **{current_rating:,} MMR** ({sign_r}{delta_rating})"
-                line_stats = f"Score: **+{max(0, delta_k)} Kills**, **+{max(0, delta_d)} Deaths** | Season Games: **{current_games}** (+1 Game Finished)"
+                clean_msg = (
+                    f"RANKED MATCH FINISHED\n"
+                    f"{ign_name}{pos_str} -> {current_rating:,} MMR ({sign_r}{delta_rating})\n"
+                    f"Score: +{max(0, delta_k)} Kills, +{max(0, delta_d)} Deaths | Season Games: {current_games} (+1 Game Finished)"
+                )
 
                 # Update baseline for next match
                 db.update_snipe_state(
@@ -128,13 +177,23 @@ class SnipeTracker:
                     "type":    "match_ended",
                     "user_id": user_id,
                     "ign":     ign_name,
-                    "message": f"🏁 **RANKED MATCH FINISHED**\n{line_main}\n{line_stats}"
+                    "message": clean_msg
                 })
 
-            # Scenario B: LIVE IN-GAME SCORE UPDATING (Mid-Match Boosted Kills/Deaths)
+            # Scenario B: LIVE MID-GAME UPDATE (Kills/Deaths increasing during ongoing game)
             elif (kills_increased or deaths_increased) and not game_count_increased:
                 live_k = current_kills - match_start_k
                 live_d = current_deaths - match_start_d
+
+                if live_k > 100 or live_k < 0:
+                    live_k = max(0, current_kills - last_kills)
+                if live_d > 100 or live_d < 0:
+                    live_d = max(0, current_deaths - last_deaths)
+
+                dedup_sig = f"mid:{user_id}:{ign_name.lower()}:{current_kills}:{current_deaths}"
+                if dedup_sig in self.sent_alert_cache:
+                    continue
+                self.sent_alert_cache.add(dedup_sig)
 
                 db.update_snipe_state(
                     user_id=user_id,
@@ -150,15 +209,17 @@ class SnipeTracker:
                     match_start_deaths=match_start_d
                 )
 
+                clean_msg = (
+                    f"IN-GAME SCORE UPDATE\n"
+                    f"Player {ign_name} is currently in a ranked match\n"
+                    f"Live Mid-Game Score: +{max(0, live_k)} Kills, +{max(0, live_d)} Deaths"
+                )
+
                 alerts.append({
                     "type":    "live_mid_game",
                     "user_id": user_id,
                     "ign":     ign_name,
-                    "message": (
-                        f"🎮 **LIVE IN-GAME SCORE ALERT**\n"
-                        f"Player **{ign_name}** is currently IN A RANKED MATCH!\n"
-                        f"Live Mid-Game Score: **+{max(0, live_k)} Kills** | **+{max(0, live_d)} Deaths**"
-                    )
+                    "message": clean_msg
                 })
 
         return alerts
@@ -226,13 +287,11 @@ class LeaderboardTracker:
 
                     pos_transition = ""
                     if prev_pos and current_pos and prev_pos != current_pos:
-                        pos_transition = f"#{prev_pos} → #{current_pos}"
+                        pos_transition = f"#{prev_pos} -> #{current_pos}"
                     elif current_pos:
                         pos_transition = f"#{current_pos}"
-                    else:
-                        pos_transition = "#?"
 
-                    line = f"• **{ign}** {pos_transition} -> **{current_rating:,} MMR** ({diff_str})"
+                    line = f"{ign}{pos_transition} -> {current_rating:,} MMR ({diff_str})"
                     updates.append(line)
 
             self.previous_snapshot[key] = {

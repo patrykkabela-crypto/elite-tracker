@@ -52,18 +52,18 @@ SKIN_CATALOG = {
 }
 
 AI_VALUATIONS = {
-    "Dragon Lore": "💎 **AI Valuation: EXTREMELY RARE / HIGH PROFIT POTENTIAL! (WORTH TO BUY)**",
-    "Howl": "🔥 **AI Valuation: LEGENDARY SKIN! High resale demand (WORTH TO BUY)**",
-    "Asimov": "⚡ **AI Valuation: POPULAR METAGAME SKIN! Best offer pricing (WORTH TO BUY)**",
-    "Fade": "🌈 **AI Valuation: HIGH TIER COLLECTOR ITEM! Great buy request candidate.**",
-    "Crimson Web": "🩸 **AI Valuation: TOP TIER ITEM! Highly liquid on Marketplace.**"
+    "Dragon Lore": "AI Valuation: EXTREMELY RARE / HIGH PROFIT POTENTIAL! (WORTH TO BUY)",
+    "Howl": "AI Valuation: LEGENDARY SKIN! High resale demand (WORTH TO BUY)",
+    "Asimov": "AI Valuation: POPULAR METAGAME SKIN! Best offer pricing (WORTH TO BUY)",
+    "Fade": "AI Valuation: HIGH TIER COLLECTOR ITEM! Great buy request candidate.",
+    "Crimson Web": "AI Valuation: TOP TIER ITEM! Highly liquid on Marketplace."
 }
 
 def get_ai_recommendation(skin_name: str) -> str:
     for key, val in AI_VALUATIONS.items():
         if key.lower() in skin_name.lower():
             return val
-    return "✅ **AI Valuation: RECOMMENDED MARKET ITEM (Good Liquidity & Fair Value)**"
+    return "AI Valuation: RECOMMENDED MARKET ITEM (Good Liquidity & Fair Value)"
 
 # ==================== HACKUSATE BUTTON VIEW ====================
 
@@ -74,7 +74,7 @@ class HackusateView(discord.ui.View):
         self.user_id = user_id
         self.user_name = user_name
 
-    @discord.ui.button(label="🚨 Hackusate Player", style=discord.ButtonStyle.danger, custom_id="hackusate_btn")
+    @discord.ui.button(label="Hackusate Player", style=discord.ButtonStyle.danger, custom_id="hackusate_btn")
     async def hackusate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         count = db.hackusate_player(
             ign=self.target_ign,
@@ -83,9 +83,9 @@ class HackusateView(discord.ui.View):
         )
         
         embed = discord.Embed(
-            title="🚨 Hackusation Registered!",
+            title="Hackusation Registered",
             description=(
-                f"Player **{self.target_ign}** has been added to the **Hacker Watchlist** (`/hackerlist`)!\n"
+                f"Player **{self.target_ign}** has been added to the **Hacker Watchlist** (`/hackerlist`)\n"
                 f"Total Hackusations: **{count}**\n\n"
                 f"Reported by: <@{self.user_id}>\n"
                 f"Status: `Under Investigation`"
@@ -129,11 +129,11 @@ class SkinSelectDropdown(discord.ui.Select):
         embed = discord.Embed(
             title=f"Marketplace Snipe Activated: {self.gun_name} | {skin_name}",
             description=(
-                f"Now tracking **{self.gun_name} — {skin_name}** live on Critical Ops Marketplace!\n\n"
+                f"Now tracking **{self.gun_name} — {skin_name}** live on Critical Ops Marketplace\n\n"
                 f"{ai_advice}\n\n"
-                f"🔔 **Live Notifications Enabled for:**\n"
-                f"• **Sell Requests**: Player X is Selling `{skin_name}` for X credits best offer\n"
-                f"• **Buy Requests**: Player X bought requested `{skin_name}` for X credits best offer"
+                f"Live Notifications Enabled:\n"
+                f"• Sell Requests: Player X is Selling {skin_name} for X credits best offer\n"
+                f"• Buy Requests: Player X bought requested {skin_name} for X credits best offer"
             ),
             color=discord.Color.gold()
         )
@@ -175,31 +175,31 @@ class CategorySelectView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=600)
 
-    @discord.ui.button(label="🔪 Knives", style=discord.ButtonStyle.primary, custom_id="cat_knives")
+    @discord.ui.button(label="Knives", style=discord.ButtonStyle.primary, custom_id="cat_knives")
     async def knives_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_guns(interaction, "Knives")
 
-    @discord.ui.button(label="🧤 Gloves", style=discord.ButtonStyle.primary, custom_id="cat_gloves")
+    @discord.ui.button(label="Gloves", style=discord.ButtonStyle.primary, custom_id="cat_gloves")
     async def gloves_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_guns(interaction, "Gloves")
 
-    @discord.ui.button(label="🔫 Pistols", style=discord.ButtonStyle.primary, custom_id="cat_pistols")
+    @discord.ui.button(label="Pistols", style=discord.ButtonStyle.primary, custom_id="cat_pistols")
     async def pistols_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_guns(interaction, "Pistols")
 
-    @discord.ui.button(label="💥 SMGs", style=discord.ButtonStyle.primary, custom_id="cat_smgs")
+    @discord.ui.button(label="SMGs", style=discord.ButtonStyle.primary, custom_id="cat_smgs")
     async def smgs_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_guns(interaction, "SMGs")
 
-    @discord.ui.button(label="🎯 Rifles", style=discord.ButtonStyle.success, custom_id="cat_rifles")
+    @discord.ui.button(label="Rifles", style=discord.ButtonStyle.success, custom_id="cat_rifles")
     async def rifles_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_guns(interaction, "Rifles")
 
-    @discord.ui.button(label="🌾 Shotguns", style=discord.ButtonStyle.secondary, custom_id="cat_shotguns")
+    @discord.ui.button(label="Shotguns", style=discord.ButtonStyle.secondary, custom_id="cat_shotguns")
     async def shotguns_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_guns(interaction, "Shotguns")
 
-    @discord.ui.button(label="🔭 Snipers", style=discord.ButtonStyle.danger, custom_id="cat_snipers")
+    @discord.ui.button(label="Snipers", style=discord.ButtonStyle.danger, custom_id="cat_snipers")
     async def snipers_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_guns(interaction, "Snipers")
 
@@ -318,7 +318,7 @@ class CriticalOpsBot(commands.Bot):
             channel = self.get_channel(config.LEADERBOARD_CHANNEL_ID)
             if channel:
                 embed = discord.Embed(
-                    title="SPEC OPS+ LEADERBOARD & MARKETPLACE TRACKER ONLINE",
+                    title="SPEC OPS+ LEADERBOARD TRACKER ONLINE",
                     description=(
                         "Bot connected to Critical Ops live API & Railway DB.\n"
                         "Actively monitoring Spec Ops+ rank changes, Live Mid-Game Scores, & Marketplace..."
@@ -348,7 +348,7 @@ async def cmd_search(interaction: discord.Interaction, ign: str):
         await interaction.followup.send(f"Player **{ign}** not found in Critical Ops database.", ephemeral=True)
         return
 
-    banned_str = " | 🚫 **BANNED**" if player.get("banned") else ""
+    banned_str = " | BANNED" if player.get("banned") else ""
     embed = discord.Embed(
         title=f"Critical Ops Player Profile: {player['ign']}{banned_str}",
         color=discord.Color.red() if player.get("banned") else discord.Color.blue()
@@ -357,7 +357,6 @@ async def cmd_search(interaction: discord.Interaction, ign: str):
     embed.add_field(name="Account ID",           value=f"`{player['id']}`",                              inline=True)
     embed.add_field(name="Rank & Rating",        value=f"**{player['rank']}** ({player['rating']:,} MMR)", inline=True)
     
-    # Season Games Breakdown
     sn = player.get('season_num', 17)
     sg = player.get('season_games', 0)
     sw = player.get('season_wins', 0)
@@ -368,7 +367,7 @@ async def cmd_search(interaction: discord.Interaction, ign: str):
     skd = player.get('season_kd', 0)
 
     embed.add_field(
-        name=f"🎮 Season {sn} Ranked Breakdown",
+        name=f"Season {sn} Ranked Breakdown",
         value=(
             f"Games Played: **{sg:,}** ({sw} W / {sl} L - **{swr}% Winrate**)\n"
             f"Kills / Deaths: **{sk:,}** / **{sd:,}** (K/D: **{skd}**)"
@@ -376,15 +375,14 @@ async def cmd_search(interaction: discord.Interaction, ign: str):
         inline=False
     )
 
-    # Career Breakdown
     embed.add_field(
-        name="🏆 Total Career Ranked Stats",
+        name="Total Career Ranked Stats",
         value=f"Games: **{player['career_games']:,}** | Kills: **{player['career_kills']:,}** | Deaths: **{player['career_deaths']:,}** | Career K/D: **{player['kd_ratio']}**",
         inline=False
     )
 
     embed.add_field(name="Peak / Lowest Rating",  value=f"Peak: **{player['peak_rating']:,}** | Lowest: **{player['lowest_rating']:,}**", inline=False)
-    embed.add_field(name="🗓 Account Creation & History", value=f"`{player['account_creation_detail']}`", inline=False)
+    embed.add_field(name="Account Creation & History", value=f"`{player['account_creation_detail']}`", inline=False)
     embed.add_field(name="Level",                value=f"Level **{player['level']}**",                   inline=True)
     embed.set_footer(text="made by pown • Detailed Profile Analytics")
     await interaction.followup.send(embed=embed)
@@ -396,7 +394,14 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
     await interaction.response.defer()
     user_id = interaction.user.id
 
-    player = await cops_api_client.get_player_by_ign(ign)
+    added, player = await snipe_tracker.add_target(user_id, ign)
+    if not added:
+        await interaction.followup.send(
+            f"Player **{ign}** is already being sniped by you!",
+            ephemeral=True
+        )
+        return
+
     if player:
         display_name = player["ign"]
         rank_str     = player.get("rank", "Unknown")
@@ -406,7 +411,7 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
         
         if player.get("banned"):
             await interaction.followup.send(
-                f"🚫 Player **{display_name}** has been BANNED by Critical Ops. You don't need to snipe them!",
+                f"Player **{display_name}** has been BANNED by Critical Ops. You don't need to snipe them!",
                 ephemeral=True
             )
             return
@@ -417,25 +422,17 @@ async def cmd_snipe(interaction: discord.Interaction, ign: str):
         )
     else:
         display_name = ign
-        profile_line = "Player not found in database — will still track rating changes."
-
-    added = snipe_tracker.add_target(user_id, display_name)
-    if not added:
-        await interaction.followup.send(
-            f"Player **{display_name}** is already being sniped by you!",
-            ephemeral=True
-        )
-        return
+        profile_line = "Player added to snipe database — live tracking active."
 
     embed = discord.Embed(
-        title="Player Snipe Activated 🎯",
+        title="Player Snipe Activated",
         description=(
             f"Now actively sniping **{display_name}**\n"
             f"{profile_line}\n\n"
-            f"🔴 **Live In-Game Score Alerts Enabled:**\n"
-            f"• **During Game**: Receive live mid-match score updates (kills/deaths boosted in real-time).\n"
-            f"• **Match Completion**: Instant DM summary when season games count increases (+1 Game Finished).\n\n"
-            f"📩 **Notifications are sent to your DMs ONLY.**"
+            f"Live In-Game Score Alerts Enabled:\n"
+            f"• During Game: Receive live mid-match score updates.\n"
+            f"• Match Completion: Instant DM summary when season games count increases (+1 Game Finished).\n\n"
+            f"Notifications are sent to your DMs ONLY."
         ),
         color=discord.Color.dark_purple()
     )
@@ -473,7 +470,7 @@ async def cmd_unsnipe(interaction: discord.Interaction, ign: str):
 @bot.tree.command(name="marketplaceselectskin", description="Select skin to snipe on Critical Ops Marketplace with AI Valuation")
 async def cmd_marketplaceselectskin(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="Critical Ops Marketplace Skin Snipe 🛒",
+        title="Critical Ops Marketplace Skin Snipe",
         description=(
             "Select the weapon category below to pick the skin you want to snipe.\n"
             "Our AI system will analyze item valuation, best offers, buy requests, and sell requests live from C-Ops Marketplace!"
@@ -503,7 +500,7 @@ async def cmd_hackerlist(interaction: discord.Interaction):
         )
 
     embed = discord.Embed(
-        title="🚨 CRITICAL OPS HACKER WATCHLIST",
+        title="CRITICAL OPS HACKER WATCHLIST",
         description="\n".join(lines),
         color=discord.Color.dark_red()
     )
@@ -530,7 +527,7 @@ async def cmd_leaderboard(interaction: discord.Interaction):
 
 # ==================== BACKGROUND TRACKING LOOP ====================
 
-@tasks.loop(seconds=8)
+@tasks.loop(seconds=10)
 async def background_tracking_loop():
     try:
         channel = bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
