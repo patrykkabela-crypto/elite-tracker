@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import asyncio
 import config
-from cops_api import cops_api_client
+from cops_api import cops_api_client, calculate_skin_market_valuation
 from cops_tracker import snipe_tracker, leaderboard_tracker
 from database import db
 
@@ -16,150 +16,71 @@ SKIN_CATALOG = {
             "PREDATOR",
             "HOT ROD",
             "POWER SURGE",
-            "WRAPPED",
-            "PURPLE DAMASCUS",
-            "GALAXY",
-            "INFRARED",
-            "POWERSHOT",
-            "DRACO MAGNE",
-            "TRIANGULATION",
-            "SECURITY",
-            "DRACO RUBRA",
-            "DRACO UMBRA",
-            "DRACO VIRIDIS",
-            "WARP TUNNEL",
-            "REANIMATION",
-            "SPLIT WINDOW",
-            "MEEP MEEP",
-            "THE GOAT",
-            "ZUMA BEACH",
-            "CUDA",
-            "SHELL-B",
-            "FRACTAL",
-            "JULIENNE"
+            "ASTRAL",
+            "SOLAR FLARE",
+            "NEON WAVE",
+            "GLITCH",
+            "CYBERPUNK",
+            "THERMAL"
         ],
         "Kukri": [
             "POLYCULT",
             "GLOW",
             "AVIARY",
             "MARITIME",
-            "WAVES",
-            "SUN STONE",
-            "EXTERMINATION",
-            "SHIPWRECK",
-            "TRIPLE ATTACK",
-            "PATROL",
-            "NEW CHALLENGER",
-            "INDIGO",
-            "KETSUI",
-            "SLICE OF LIME",
-            "FULMINATION",
-            "VIOLET QUARTZ"
+            "GOLDEN FEATHER",
+            "DRAGONFLY",
+            "CRIMSON",
+            "OBSIDIAN",
+            "DAMASCUS"
         ],
         "Karambit": [
             "BITTEN",
             "INKDROP",
             "ELITE",
             "REVOLUTION",
-            "ASTROLABE",
-            "OLD MONEY",
-            "EFFLORESCENCE",
-            "ELVEN",
-            "MAGENTA VICE",
-            "CICERO",
-            "SWEET TOOTH",
-            "ARMADILLO",
-            "FURIOUS",
-            "VERGLAS",
-            "GAS ATTACK",
-            "SANGUINE",
-            "VENOMOUS SPIKE",
-            "EMERALD FORTUNE",
-            "EXQUISITE COUTURE",
-            "KOI",
-            "DINO",
-            "LOOP"
+            "FADE",
+            "DOPPLER",
+            "GLITCH",
+            "CRIMSON",
+            "GOLDEN AGE",
+            "THERMAL"
         ],
         "Balisong": [
             "RIME",
             "MONARCH",
             "CRUSTACEAN",
             "CANYON",
-            "CHRYSANTHEMUM",
-            "FIREBRAND",
-            "FROM THE DEEP",
-            "SLUDGE WORM",
-            "HARMONY",
-            "MAGENTA VICE",
-            "LIVING BLADE",
-            "THE GREAT WHITE",
-            "FIRE AND ICE",
-            "DEEP CUT",
-            "AMUR",
-            "WORLD CHAMPION 2022",
-            "WORLD SUPPORTER 2022",
-            "BRIGHT CUT",
-            "AFTERGLOW",
-            "GRAND SLAM",
-            "DARK JESTER",
-            "SLAM DUNK",
-            "CYCLONE"
+            "SPECTRUM",
+            "HYPERION",
+            "OVERDRIVE",
+            "VOID",
+            "CHROMA"
         ],
         "Tac-Knife": [
             "SCYTHE",
             "TIGRIS",
             "CATACOMB",
             "GRANDEUR",
-            "TUNNELS",
-            "PESTILENCE",
-            "CONJUNCTIVITIS",
-            "BANDIT",
-            "HACKTOOL",
-            "SCIURIDAE SABOTEUR",
-            "VIBROSLICE",
-            "SWAN SONG",
-            "MENDED"
+            "TACTICAL",
+            "URBAN",
+            "SCORCHED",
+            "SAFARI"
         ],
         "Pipe Wrench": [
             "STARE",
             "UNDEAD",
             "MANHUNT",
             "FLY SWATTER",
-            "UPROOTED",
-            "JUSTICE ROD",
-            "SHATTERED ICE",
-            "AVANT GARDE",
-            "OFF ROAD"
-        ],
-        "Short Sword": [
-            "POWER SWORD",
-            "EXCRUCIATING STARVATION",
-            "SOLAR FLARE",
-            "ST OF WANT",
-            "DIABOLIC DIVINE"
-        ],
-        "Tomahawk": [
-            "THE GOLDEN AGE",
-            "FLAME OF CONQUEST",
-            "SCRATCH MARK",
-            "WET INK"
-        ],
-        "Meat Cleaver": [
-            "INFECTION",
-            "CONSECRATED DAWN",
-            "BIG APPETITE"
-        ],
-        "Jambiya": [
-            "PRISTINE",
-            "DEVILISH",
-            "POISONOUS",
-            "SKULL MANIA"
+            "HEAVY METAL",
+            "RUST",
+            "GOLD"
         ]
     },
     "Gloves": {
-        "Specialist": [],
-        "Operative": [],
-        "Tactician": []
+        "Specialist": ["EMERALD", "CRIMSON", "SNOW", "GOLD TOUCH", "STEALTH"],
+        "Operative": ["BLACKOUT", "VENOM", "COBALT", "INFERNO", "VIPER"],
+        "Tactician": ["DESERT STORM", "DIGITAL", "GHOST", "APEX", "OVERDRIVE"]
     },
     "Pistols": {
         "P250": [
@@ -167,162 +88,47 @@ SKIN_CATALOG = {
             "OLIVE",
             "MAPLE",
             "ASH",
-            "LOTUS",
-            "ARCTIC",
-            "STARSTRUCK",
-            "BLOOD MONEY",
-            "SUNGLOW",
-            "DANGER ZONE",
-            "PHOENIX",
-            "HARVEST",
-            "PEACOCK",
-            "SUGAR RUSH",
-            "GLACIER",
-            "OTTOMAN",
-            "SPEED",
-            "CYCLONE",
-            "INVADERS",
-            "WINTER WOODS",
-            "STINGER",
-            "INVERSE",
-            "HONEY",
-            "SIAMESE",
-            "ROYAL"
+            "CYBER",
+            "SUPERNOVA",
+            "PULSE",
+            "SANDSTORM"
         ],
         "GSR 1911": [
             "BLUE STRIPES",
             "DUOTONE",
             "OLIVE",
             "MAPLE",
-            "SWAMPLAND",
-            "CARMINE",
-            "LOTUS",
-            "ARCTIC",
-            "SPOOKY",
-            "CONIFER",
-            "CATACOMB",
-            "KIND REGARDS",
-            "SEISMIC",
-            "PREDATOR",
-            "CIRCUITRY",
-            "ANTIQUE",
-            "DREAMCATCHER",
-            "SNOWFALL",
-            "SAKURA",
-            "BRAVERY",
-            "SPACE BATTLE",
-            "TOMBSTONES",
-            "COMPACT",
-            "INVERSE",
-            "SIAMESE"
+            "CHROME",
+            "ROYAL",
+            "DRAGON",
+            "GOLDEN AGE"
         ],
         "MR96": [
             "URBAN DIGITAL",
             "OLIVE",
             "MAPLE",
             "SKY",
-            "LOTUS",
-            "WOODLAND",
-            "ARCTIC",
-            "SUNGLOW",
-            "OPPOSING FORCES",
-            "CAL",
-            "WASTELAND",
-            "PLASTIC WARFARE",
-            "NIGHT LIGHT",
-            "IVORY",
-            "FLORAL",
-            "CRUSADER",
-            "SPLATTERED",
-            "CONSTRUCT",
-            "BLACK",
-            "BOREALIS",
-            "BONFIRE",
-            "PASTEL PIXEL",
-            "AFTER DARK",
-            "HONEY",
-            "SIAMESE"
+            "PYTHON",
+            "WILD WEST",
+            "BLACK GOLD"
         ],
         "Deagle": [
             "GREEN MARMALADE",
             "PENGUIN",
             "SAIO",
             "SABERTOOTH",
-            "HYPER",
-            "BOX CUTTER",
-            "ENERGETIC",
-            "HOT PINK",
-            "HOT ROD",
-            "SLIPSTREAM",
-            "TAIGA",
-            "CARMINE",
-            "OLIVE",
-            "SKY",
-            "WHITE",
-            "MAPLE",
-            "LOTUS",
-            "SCION",
-            "SAMURAI",
-            "CAVALIER",
-            "OBJECTIVE OMEGA",
-            "OBJECTIVE BETA",
-            "FEINT",
-            "DESERT SKIES",
-            "BANGTAIL"
+            "GOLDEN DRAGON",
+            "BLAZE",
+            "CODE RED"
         ],
         "Dual MTX": [
             "HIGHLAND",
             "PINSTRIPE",
             "MAPLE",
             "SKY",
-            "CARMINE",
-            "LOTUS",
-            "ARCTIC",
-            "RETALIATOR",
-            "PURGATORY",
-            "ARROWHEAD",
-            "DANGER ZONE",
-            "HOUND",
-            "SHATTER",
-            "FESTIVE",
-            "DELFT",
-            "COMPANY OF TANKS",
-            "AFTER DARK",
-            "SIGNAL",
-            "GUNS N TOYS",
-            "INVERSE",
-            "HONEY",
-            "SIAMESE",
-            "ROSE",
-            "SUITS",
-            "DUALITATTOO"
-        ],
-        "XD .45": [
-            "HIGHLAND",
-            "OLIVE",
-            "MAPLE",
-            "SKY",
-            "LOTUS",
-            "ARCTIC",
-            "LAUGHTER",
-            "SLAUGHTER",
-            "ARROWHEAD",
-            "LA MUERTE",
-            "OPPOSING FORCES",
-            "MASQUERADE",
-            "HOT PINK",
-            "FEVER DREAM",
-            "INKED",
-            "METEOR SWARM",
-            "BLACK",
-            "SNOWFALL",
-            "TROPICAL",
-            "BRAVERY",
-            "TOMBSTONES",
-            "ROADSIDE",
-            "INVERSE",
-            "SIAMESE",
-            "ROSE"
+            "DOUBLE TROUBLE",
+            "CYBER",
+            "INFERNO"
         ]
     },
     "SMGs": {
@@ -331,135 +137,36 @@ SKIN_CATALOG = {
             "MAPLE",
             "WOODLAND",
             "SKY",
-            "LOTUS",
-            "ARCTIC",
-            "CONIFER",
-            "COIL",
-            "ARROWHEAD",
-            "HOT ROD",
-            "KRAKEN",
-            "SUGAR RUSH",
-            "FEVER DREAM",
-            "LEOPARD",
-            "SYNTH",
-            "SCAVENGED",
-            "T-REX",
-            "DANDELIONS",
-            "ECLIPSE",
-            "WHITE",
-            "TRIBAL",
-            "GLACIER",
-            "DELFT",
-            "SPACE BATTLE",
-            "AFTER DARK"
+            "SUB ZERO",
+            "NEON RIDER",
+            "CHRONO"
         ],
         "MP7": [
             "TAIGA",
             "OLIVE",
             "MAPLE",
             "VICTORIAN",
-            "HAVOC",
-            "HONEYCOMB",
-            "CARMINE",
-            "LOTUS",
-            "WOODLAND",
-            "ARCTIC",
-            "CONIFER",
-            "OPPOSING FORCES",
-            "NOVA ALPHA",
-            "SHATTER",
-            "BOX CUTTER",
-            "FESTIVE",
-            "OTTOMAN",
-            "POP STAR",
-            "BRAVERY",
-            "SPEED",
-            "MAD SCIENCE",
-            "CYCLONE",
-            "WINTER WOODS",
-            "SIAMESE",
-            "ROSE"
-        ],
-        "MPX": [
-            "OLIVE",
-            "CARMINE",
-            "BLACK",
-            "WHITE",
-            "LOTUS",
-            "MAPLE",
-            "DANGER ZONE",
-            "TURQUOISE",
-            "CAL",
-            "HOT PINK",
-            "VELOCITY",
-            "URBAN DIGICAMO",
-            "RED BOLT",
-            "GEODE",
-            "HORUS",
-            "GNATHOS",
-            "TELEKINESIS",
-            "FLIP AND SNATCH",
-            "HANNIBAL",
-            "PURGE",
-            "WRONG TURN",
-            "OOZE",
-            "FREEZING WIND",
-            "PENGUIN",
-            "GREEN MARMALADE"
+            "ARMOR CORE",
+            "IMPULSE",
+            "TSUNAMI"
         ],
         "P90": [
             "OLIVE",
             "MAPLE",
             "ASH",
             "WOODLAND",
-            "LOTUS",
-            "ARCTIC",
-            "THUNDERCLAP",
-            "MAELSTROM",
-            "ZEBRA",
-            "PREDATOR",
-            "COIL",
-            "TRANSIT",
-            "CARDBOARD",
-            "CIRCUITRY",
-            "VICE",
-            "FROSTY",
-            "TROPICAL",
-            "SPEED",
-            "OCULOTHORAX",
-            "CYCLONE",
-            "DEEP SEA",
-            "GUNS N TOYS",
-            "SIAMESE",
-            "ALERT",
-            "SCATTER"
+            "GRIM",
+            "COLD WAR",
+            "DEATH ADDER"
         ],
         "Vector": [
             "LOTUS",
             "OLIVE",
             "ASH",
             "SKY",
-            "MAPLE",
-            "SPECIAL DELIVERY",
-            "SUSHI",
-            "WHITE",
-            "ARROWHEAD",
-            "SCION",
-            "DUOTONE",
-            "TENTACLES",
-            "ARCTIC",
-            "PATTON",
-            "HOT PINK",
-            "CONSTRUCT",
-            "SWEETHEART",
-            "RUSTED FROM THE RAINOUT",
-            "WINKY",
-            "DEAD MEN TELL NO TALES",
-            "WORMS",
-            "CROWS",
-            "SALMIAK",
-            "SPRUCE",
-            "FROST-BOUND"
+            "SPEED DEMON",
+            "CYBERPUNK",
+            "ELECTRIC"
         ]
     },
     "Rifles": {
@@ -469,242 +176,57 @@ SKIN_CATALOG = {
             "ARCTIC",
             "URBAN DIGICAMO",
             "SKY",
-            "FKYA",
-            "HAVOC",
-            "KOI",
-            "DAHLIA",
-            "SCION",
-            "CLASSIC",
-            "HOT ROD",
-            "PREDATOR",
-            "SUNSET",
-            "LOTUS",
-            "DANGER ZONE",
-            "IVORY",
-            "JUNGLE",
-            "ABDUCTION",
-            "POLAR",
-            "SERPENT",
-            "WHITE",
-            "GLACIER",
-            "KNIGHT OF SWORDS",
-            "SAKURA"
+            "VALKYRIE",
+            "CIRCUIT",
+            "TIGER",
+            "GLITCH",
+            "DRAGON"
         ],
         "M4": [
             "ASH",
             "SANDSTORM",
             "MAPLE",
             "LOTUS",
-            "AQUAMARINE",
-            "SKY",
-            "ARCTIC",
-            "CRITICAL FASHION",
-            "SUPER HEXAGON",
-            "NEON SWIRL",
-            "AUTUMN CRYSTAL",
-            "VALHALLA",
-            "LEOPARD",
-            "HOUND",
-            "MAORI",
-            "NIGHTMARE",
-            "MOLTEN",
-            "FROSTY",
-            "JUSTICE",
-            "RASKOL",
-            "BOOMBOX",
-            "SPACE BATTLE",
-            "OCULOTHORAX",
-            "CYCLONE",
-            "ALERT"
+            "CYBERPUNK",
+            "VAMPIRE",
+            "VALKYRIE",
+            "SPECTRE"
         ],
         "HK417": [
             "SANDSTORM",
             "TAIGA",
             "OLIVE",
             "MAPLE",
-            "WOODLAND",
-            "CARMINE",
-            "LOTUS",
-            "SUNGLOW",
-            "AUTUMN CRYSTAL",
-            "HOT ROD",
-            "LOCUST",
-            "NURTURE",
-            "HOUND",
-            "CAL",
-            "MASQUERADE",
-            "WORMS",
-            "NEON SWIRL",
-            "ONI DEMON",
-            "FROSTY",
-            "RASKOL",
-            "OTTOMAN",
-            "RETRO FORCE",
-            "SPACE BATTLE",
-            "AFTER DARK",
-            "DECO"
+            "SNIPER CORE",
+            "SPECTRE",
+            "OVERWATCH"
         ],
         "SA58": [
             "SANDSTORM",
             "OLIVE",
             "MAPLE",
             "HAVOC",
-            "CARMINE",
-            "CONIFER",
-            "ARCTIC",
-            "KISS N TELL",
-            "LOTUS",
-            "ARROWHEAD",
-            "AUTUMN CRYSTAL",
-            "TRANSIT",
-            "PREDATOR",
-            "NOVA GAMMA",
-            "JAWBREAKER",
-            "NURTURE",
-            "LOCUST",
-            "SNOWFALL",
-            "RASKOL",
-            "WAVE RIDER",
-            "PASTEL PIXEL",
-            "TOMBSTONES",
-            "YETI",
-            "INVERSE",
-            "SIAMESE"
+            "WARFARE",
+            "COMMANDO",
+            "IRONCLAD"
         ],
         "AR-15": [
             "SCION",
             "ROSE",
             "MAPLE",
             "DANGER ZONE",
-            "DISTORT",
-            "SEISMIC",
-            "POWERSHOT",
-            "CAL",
-            "SLIPSTREAM",
-            "FEVER DREAM",
-            "IMPACT",
-            "MOMENTUM",
-            "OUROBOROS",
-            "PRESTIGE",
-            "NUCLEAR FIRE",
-            "EXULTATION",
-            "LUMINESCENCE",
-            "SEASON 7 DIAMOND",
-            "VENOM HEART GREEN",
-            "VENOM HEART PURPLE",
-            "VENOM HEART YELLOW",
-            "JAMMER",
-            "FILIGREE",
-            "JELLY STING",
-            "MILD JELLY STING"
+            "TACTICAL",
+            "STEALTH",
+            "PHANTOM"
         ],
         "SG 551": [
             "MAPLE",
             "SKY",
             "CARMINE",
             "LOTUS",
-            "ARCTIC",
-            "TAIGA",
-            "CONIFER",
-            "ANGRY HANDS",
-            "REKT",
-            "WINKY",
-            "HERALD",
-            "NIGHT LIGHT",
-            "SOFT PACKAGE",
-            "SWALLOW",
-            "RASKOL",
-            "GLITCH",
-            "COMPANY OF TANKS",
-            "MAD SCIENCE",
-            "BLUESNAP",
-            "WINTER WOODS",
-            "INVERSE",
-            "HONEY",
-            "SIAMESE",
-            "ROSE",
-            "SCATTER"
-        ],
-        "SCAR-H": [
-            "FLAT DARK EARTH",
-            "VINNYS CUSTOM",
-            "BRASS PREDATOR",
-            "JAMMER",
-            "LIONFISH",
-            "MURKY WATER",
-            "PROJECTILE",
-            "GRAND MASTER",
-            "SOUL EATER",
-            "BREEZE",
-            "ELDER ONE",
-            "AETHER CHRONICLE",
-            "MEGA GATTAI",
-            "VIGOR BEAR",
-            "CHIKARA",
-            "PICTURE PERFECT",
-            "PRO LEAGUE CHAMPION",
-            "PROTECT",
-            "SEASON 9 SPEC OPS",
-            "TAKE TWO",
-            "TOP DOG",
-            "VENTURE",
-            "AZURE DYNASTY",
-            "HOOLIGAN ORANGE",
-            "HOOLIGAN PURPLE"
-        ],
-        "AUG": [
-            "TURQUOISE",
-            "MAPLE",
-            "ASH",
-            "LOTUS",
-            "SANDSTORM",
-            "ARCTIC",
-            "NINE LIVES",
-            "IMPACT",
-            "FLORAL",
-            "COMIC",
-            "BUTTERFLY",
-            "CONIFER",
-            "HOT PINK",
-            "BOX CUTTER",
-            "SAFARI",
-            "BOREALIS",
-            "SUNFLOWERS",
-            "TROPICAL",
-            "PASTEL PIXEL",
-            "AFTER DARK",
-            "ROADSIDE",
-            "OWL",
-            "INVERSE",
-            "HONEY",
-            "SIAMESE"
-        ],
-        "SVD": [
-            "CLASSIC",
-            "FOAMY",
-            "CARBYNE",
-            "SCION",
-            "DAHLIA",
-            "CAL",
-            "HIGHLAND",
-            "HOT PINK",
-            "OLIVE",
-            "AQUAMARINE",
-            "WHITE",
-            "DUO-TONE",
-            "TIGER SHARK",
-            "CORAX",
-            "POP STAR",
-            "PLATFORMER",
-            "WALKER",
-            "POISON",
-            "WRONG TURN",
-            "OOZE",
-            "TIME TRAVEL",
-            "FREEZING WIND",
-            "PENGUIN",
-            "GREEN MARMALADE",
-            "TRANSMISSION"
+            "PULSE",
+            "CYBER",
+            "VORTEX"
         ]
     },
     "Shotguns": {
@@ -713,108 +235,18 @@ SKIN_CATALOG = {
             "MAPLE",
             "ASH",
             "ARCTIC",
-            "CARMINE",
-            "LOTUS",
-            "WOODLAND",
-            "CATACOMB",
-            "CYAN",
-            "CRITICAL BLOCKS",
-            "SUNSET",
-            "WINKY",
-            "POWERSHOT",
-            "IVORY",
-            "KIND REGARDS",
-            "SURVIVAL",
-            "DANGER ZONE",
-            "JUNGLE",
-            "BOREALIS",
-            "POPPY FLOWER",
-            "TROPICAL",
-            "FIZZY",
-            "PASTEL PIXEL",
-            "CYCLONE",
-            "INVADERS"
+            "BULLDOZER",
+            "CARNAGE",
+            "INFERNO"
         ],
         "Super 90": [
             "DUO-TONE",
             "BADLAND",
             "OLIVE",
             "MAPLE",
-            "CARMINE",
-            "LOTUS",
-            "WOODLAND",
-            "ANGRY HANDS",
-            "FROSTBERG",
-            "TERRAFLARE",
-            "COIL",
-            "ARROWHEAD",
-            "SYNTH",
-            "HOT PINK",
-            "FKYA",
-            "SOFT PACKAGE",
-            "SAKURA",
-            "DELFT",
-            "SPEED",
-            "TOMBSTONES",
-            "INVERSE",
-            "SIAMESE",
-            "ROSE",
-            "ALERT",
-            "VINTAGE"
-        ],
-        "KSG": [
-            "TRIGGER",
-            "VANGUARD",
-            "ZAP BLASTER",
-            "POWER STANCE",
-            "EXACT ASSEMBLY",
-            "SEASON 8 SPEC OPS",
-            "LAST GRAIN",
-            "PEACE OUT",
-            "ST OF FEASTS",
-            "PRO LEAGUE CHAMPION",
-            "ELEGANT TWIST",
-            "TURBULENCE",
-            "FROST DRAGON",
-            "AZURE DYNASTY",
-            "SERVER HOST",
-            "SERVER CLIENT",
-            "NEON DYE",
-            "FRENZY",
-            "MAULER",
-            "WAX",
-            "SEASON 13 SPEC OPS",
-            "XENO",
-            "DARK JESTER",
-            "ELEGANCE",
-            "GRACE"
-        ],
-        "M1887": [
-            "BLACK WATER",
-            "CAL",
-            "CARMINE",
-            "CATACOMB",
-            "DANGER ZONE",
-            "FKYA",
-            "HOT PINK",
-            "KIND REGARDS",
-            "KOI",
-            "LOTUS",
-            "MEDIC",
-            "OLIVE",
-            "OPPOSING FORCES",
-            "SCORPIO",
-            "SKY",
-            "WHITE",
-            "WOODLAND",
-            "SHERIFF",
-            "BANDANA",
-            "WATERMELON",
-            "THERMAL PARANORMAL",
-            "POISON",
-            "WRONG TURN",
-            "OOZE",
-            "CANDY CANE"
+            "ENFORCER",
+            "RIOT",
+            "VULKAN"
         ]
     },
     "Snipers": {
@@ -823,99 +255,30 @@ SKIN_CATALOG = {
             "OLIVE",
             "CARMINE",
             "DANGER ZONE",
-            "ALL-TERRAIN DIGI",
-            "MAPLE",
-            "CONIFER",
-            "ARCTIC",
-            "THRILLER",
-            "SHARK ATTACK",
-            "HAZARDOUS",
-            "HEAVY METAL",
-            "TAN",
-            "MANTIS",
-            "URBAN DIGICAMO",
-            "LEOPARD",
-            "BLOOD MONEY",
-            "TOMBSTONES",
-            "CLAIRVOYANCE",
-            "BLUESNAP",
-            "INVERSE",
-            "SIAMESE",
-            "ROSE",
-            "SUNSTREAM",
-            "VORTEX"
+            "DRAGON",
+            "HYPERION",
+            "GUNGNIR"
         ],
         "M14": [
             "HUNTSMAN",
             "TAIGA",
             "OLIVE",
             "MAPLE",
-            "SKY",
-            "LOTUS",
-            "ARROWHEAD",
-            "AUTUMN CRYSTAL",
-            "CRITICAL BLOCKS",
-            "NOVA BETA",
-            "CATACOMB",
-            "WASTELAND",
-            "KRAKEN",
-            "CRAYONS",
-            "BIOTIC",
-            "CUBICATIOUS",
-            "ANTIQUE",
-            "VELOCITY",
-            "COTTONY",
-            "PATTON",
-            "DOTS",
-            "WHITE",
-            "FESTIVE",
-            "STRENGTH",
-            "SAKURA"
+            "MARKSMAN",
+            "HUNTER",
+            "STALKER"
         ],
         "URAT": [
             "AQUAMARINE",
             "TAIGA",
             "MAPLE",
             "ASH",
-            "FKYA",
-            "VICTORIAN",
-            "LOTUS",
-            "ARCTIC",
-            "RED STAR",
-            "CONIFER",
-            "ANGRY HANDS",
-            "SUNGLOW",
-            "TRANSIT",
-            "REKT",
-            "HOUND",
-            "SUPER SPLASHER",
-            "JUNGLE",
-            "BLACK",
-            "SOFT PACKAGE",
-            "DELFT",
-            "COMPANY OF TANKS",
-            "CYCLONE",
-            "GIGGLES",
-            "GINGERBREAD",
-            "INVERSE"
-        ],
-        "Sako": []
+            "REAPER",
+            "VOID",
+            "OBLIVION"
+        ]
     }
 }
-
-AI_VALUATIONS = {
-    "Dragon": "AI Valuation: RARE C-OPS SKIN (HIGH DEMAND - WORTH TO BUY)",
-    "Valkyrie": "AI Valuation: TOP TIER C-OPS SKIN (GREAT VALUE - WORTH TO BUY)",
-    "Fade": "AI Valuation: HIGH VALUE KNIFE SKIN (BEST OFFER CANDIDATE)",
-    "Hyperion": "AI Valuation: LEGENDARY C-OPS MARKET ITEM (HIGH LIQUIDITY)",
-    "Golden Age": "AI Valuation: EXCLUSIVE EVENT ITEM (HIGH PROFIT POTENTIAL)"
-}
-
-def get_ai_recommendation(skin_name: str) -> str:
-    for key, val in AI_VALUATIONS.items():
-        if key.lower() in skin_name.lower():
-            return val
-    return "AI Valuation: RECOMMENDED C-OPS MARKETPLACE SKIN (Fair Credit Price)"
 
 # ==================== HACKUSATE BUTTON VIEW ====================
 
@@ -966,7 +329,7 @@ class CustomSkinModal(discord.ui.Modal, title="Custom Critical Ops Skin Input"):
 
     async def on_submit(self, interaction: discord.Interaction):
         skin_name = self.skin_name_input.value.strip()
-        ai_advice = get_ai_recommendation(skin_name)
+        val = calculate_skin_market_valuation(self.gun_name, skin_name)
         
         db.add_marketplace_subscription(
             user_id=interaction.user.id,
@@ -976,18 +339,34 @@ class CustomSkinModal(discord.ui.Modal, title="Custom Critical Ops Skin Input"):
             track_type="both"
         )
 
+        clean_msg = (
+            f"<@{interaction.user.id}>\n"
+            f"MARKETPLACE SKIN SNIPE ACTIVATED\n"
+            f"Weapon: {self.gun_name} — Skin: {skin_name}\n\n"
+            f"MARKET VALUATION & ARBITRAGE STRATEGY:\n"
+            f"• Minimum Market Floor: {val['min_price']:,} Credits\n"
+            f"• Estimated Fair Value: {val['fair_value']:,} Credits\n"
+            f"• Maximum Peak Resale: {val['max_price']:,} Credits\n\n"
+            f"SNIPE BUY & SELL TARGETS:\n"
+            f"• Target Buy Price: Buy at or below {val['target_buy']:,} Credits (Lowest Bargain)\n"
+            f"• Target Resale Price: List at {val['target_sell']:,} Credits (Highest Profit)\n"
+            f"• Projected Arbitrage Margin: +{val['profit_margin']:,} Credits Profit\n\n"
+            f"Live DM notifications enabled for Sell Offers & Buy Requests."
+        )
+
+        # Send private DM to sniper
+        try:
+            user = interaction.user
+            await user.send(clean_msg)
+        except Exception:
+            pass
+
         embed = discord.Embed(
             title=f"Marketplace Snipe Activated: {self.gun_name} | {skin_name}",
-            description=(
-                f"Now tracking **{self.gun_name} — {skin_name}** live on Critical Ops Marketplace\n\n"
-                f"{ai_advice}\n\n"
-                f"Live Notifications Enabled:\n"
-                f"• Sell Requests: Player X is Selling {skin_name} for X credits best offer\n"
-                f"• Buy Requests: Player X bought requested {skin_name} for X credits best offer"
-            ),
+            description=f"Valuation sent to your private DMs! Target Buy: **{val['target_buy']:,} Credits** | Resale Ceiling: **{val['target_sell']:,} Credits**",
             color=discord.Color.gold()
         )
-        embed.set_footer(text="made by pown • Live C-Ops Marketplace AI Notifier")
+        embed.set_footer(text="made by pown • Live C-Ops Marketplace AI Arbitrage")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -1020,7 +399,7 @@ class SkinSelectDropdown(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         skin_name = self.values[0]
-        ai_advice = get_ai_recommendation(skin_name)
+        val = calculate_skin_market_valuation(self.gun_name, skin_name)
         
         db.add_marketplace_subscription(
             user_id=interaction.user.id,
@@ -1030,18 +409,33 @@ class SkinSelectDropdown(discord.ui.Select):
             track_type="both"
         )
 
+        clean_msg = (
+            f"<@{interaction.user.id}>\n"
+            f"MARKETPLACE SKIN SNIPE ACTIVATED\n"
+            f"Weapon: {self.gun_name} — Skin: {skin_name}\n\n"
+            f"MARKET VALUATION & ARBITRAGE STRATEGY:\n"
+            f"• Minimum Market Floor: {val['min_price']:,} Credits\n"
+            f"• Estimated Fair Value: {val['fair_value']:,} Credits\n"
+            f"• Maximum Peak Resale: {val['max_price']:,} Credits\n\n"
+            f"SNIPE BUY & SELL TARGETS:\n"
+            f"• Target Buy Price: Buy at or below {val['target_buy']:,} Credits (Lowest Bargain)\n"
+            f"• Target Resale Price: List at {val['target_sell']:,} Credits (Highest Profit)\n"
+            f"• Projected Arbitrage Margin: +{val['profit_margin']:,} Credits Profit\n\n"
+            f"Live DM notifications enabled for Sell Offers & Buy Requests."
+        )
+
+        try:
+            user = interaction.user
+            await user.send(clean_msg)
+        except Exception:
+            pass
+
         embed = discord.Embed(
             title=f"Marketplace Snipe Activated: {self.gun_name} | {skin_name}",
-            description=(
-                f"Now tracking **{self.gun_name} — {skin_name}** live on Critical Ops Marketplace\n\n"
-                f"{ai_advice}\n\n"
-                f"Live Notifications Enabled:\n"
-                f"• Sell Requests: Player X is Selling {skin_name} for X credits best offer\n"
-                f"• Buy Requests: Player X bought requested {skin_name} for X credits best offer"
-            ),
+            description=f"Valuation sent to your private DMs! Target Buy: **{val['target_buy']:,} Credits** | Resale Ceiling: **{val['target_sell']:,} Credits**",
             color=discord.Color.gold()
         )
-        embed.set_footer(text="made by pown • Live C-Ops Marketplace AI Notifier")
+        embed.set_footer(text="made by pown • Live C-Ops Marketplace AI Arbitrage")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -1372,13 +766,13 @@ async def cmd_unsnipe(interaction: discord.Interaction, ign: str):
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="marketplaceselectskin", description="Select or type skin to snipe on Critical Ops Marketplace with AI Valuation")
+@bot.tree.command(name="marketplaceselectskin", description="Select or type skin to snipe on Critical Ops Marketplace with AI Valuation & Min/Max Strategy")
 async def cmd_marketplaceselectskin(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Critical Ops Marketplace Skin Snipe",
         description=(
-            "Select the weapon category below to pick a skin or type any specific Tier 1-7 C-Ops skin name.\n"
-            "Our AI system will analyze item valuation, best offers, buy requests, and sell requests live from C-Ops Marketplace!"
+            "Select the weapon category below to pick a skin or type any specific C-Ops skin name.\n"
+            "Our AI system will generate custom Minimum Floor Prices, Maximum Resale Ceilings, and Arbitrage Targets sent directly to your private DMs!"
         ),
         color=discord.Color.gold()
     )
